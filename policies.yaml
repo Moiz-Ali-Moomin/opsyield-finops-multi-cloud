@@ -1,0 +1,8 @@
+policies:
+  - name: DevelopmentBudgetCap
+    condition: environment == "development" and monthly_cost > 1000
+    action: fail
+
+  - name: StagingBudgetCap
+    condition: environment == "staging" and monthly_cost > 5000
+    action: alert

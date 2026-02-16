@@ -1,0 +1,10 @@
+google-cloud-compute
+google-auth
+click
+rich
+pyyaml
+fastapi
+uvicorn
+boto3
+azure-identity
+azure-mgmt-costmanagement

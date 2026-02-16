@@ -1,0 +1,50 @@
+{
+  "meta": {
+    "provider": "gcp",
+    "period": "30 days"
+  },
+  "summary": {
+    "total_cost": 200.0,
+    "resource_count": 1,
+    "risk_score": 0.0
+  },
+  "trends": [
+    {
+      "amount": 150.0,
+      "currency": "USD",
+      "date": "2026-02-16",
+      "service": "Compute Engine",
+      "provider": "gcp",
+      "account": null,
+      "region": null,
+      "tags": {},
+      "business_unit": null
+    },
+    {
+      "amount": 50.0,
+      "currency": "USD",
+      "date": "2026-02-16",
+      "service": "Cloud Storage",
+      "provider": "gcp",
+      "account": null,
+      "region": null,
+      "tags": {},
+      "business_unit": null
+    }
+  ],
+  "anomalies": [],
+  "forecast": [],
+  "governance_issues": [],
+  "resources": [
+    {
+      "id": "vm-1",
+      "name": "instance-1",
+      "type": "compute_instance",
+      "provider": "gcp",
+      "region": "us-central1",
+      "creation_date": null,
+      "tags": {},
+      "metadata": {}
+    }
+  ]
+}

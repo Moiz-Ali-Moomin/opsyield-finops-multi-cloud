@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: opsyield
+Version: 0.1.0
+Requires-Dist: google-cloud-compute
+Requires-Dist: google-auth
+Requires-Dist: click
+Requires-Dist: rich
+Requires-Dist: pyyaml
+Requires-Dist: fastapi
+Requires-Dist: uvicorn
+Requires-Dist: boto3
+Requires-Dist: azure-identity
+Requires-Dist: azure-mgmt-costmanagement
+Dynamic: requires-dist
