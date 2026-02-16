@@ -61,7 +61,7 @@ export interface AnalysisResult {
 
 export const api = axios.create({
     baseURL: '/api',
-    timeout: 30000, // 30s timeout for slow cloud calls
+    timeout: 90000, // 90s timeout for real CLI calls (gcloud/aws/az)
     headers: {
         'Content-Type': 'application/json',
     },

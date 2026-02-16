@@ -56,8 +56,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                                                         variant={!isAggregate && provider === p ? 'default' : 'ghost'}
                                                         size="sm"
                                                         onClick={() => setProvider(p)}
-                                                        disabled={!ready}
-                                                        className={`text-xs ${!ready ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                        className={`text-xs ${!ready ? 'opacity-75' : ''}`}
                                                     >
                                                         {p.toUpperCase()}
                                                     </Button>

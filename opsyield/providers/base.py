@@ -13,3 +13,8 @@ class CloudProvider(ABC):
     async def get_infrastructure(self) -> List[Resource]:
         """Discover infrastructure resources"""
         pass
+
+    @abstractmethod
+    async def get_status(self) -> Dict[str, Any]:
+        """Check provider status (installed, authenticated)"""
+        pass

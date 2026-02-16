@@ -1,11 +1,14 @@
-
-import json
 from dataclasses import asdict
-from ..core.models import AnalysisResult
+from typing import List, Dict
+from ..core.models import NormalizedCost
 
-def export_json(result: AnalysisResult, filepath: str):
-    with open(filepath, 'w') as f:
-        # crude serialization
-        data = asdict(result)
-        # handle date serialization if needed
-        json.dump(data, f, indent=2, default=str)
+def serialize_costs(costs: List[NormalizedCost]) -> List[dict]:
+    return [asdict(c) for c in costs]
+
+def serialize_optimization_results(optimizations: List[Dict]):
+    # Already dicts, but good for validation/transform if needed
+    return optimizations
+
+def export_json(result: dict, filepath: str):
+    # Implementation for exporting JSON to a file
+    pass

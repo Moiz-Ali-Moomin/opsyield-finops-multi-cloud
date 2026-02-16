@@ -9,7 +9,7 @@ export function SpendTrendChart() {
 
     return (
         <ChartCard title="Spend Trend (30 Days)" loading={loading}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={280} minWidth={0}>
                 <AreaChart data={data?.trends || []}>
                     <defs>
                         <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">

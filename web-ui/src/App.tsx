@@ -6,12 +6,22 @@ import { KPIGrid } from './components/dashboard/KPIGrid';
 import { SpendTrendChart } from './components/charts/SpendTrendChart';
 import { ForecastChart } from './components/charts/ForecastChart';
 import { RiskHeatmap } from './components/dashboard/RiskHeatmap';
+import { SetupInstructions } from './components/onboarding/SetupInstructions';
 import { useOpsStore } from './store/useOpsStore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
 
 function Dashboard() {
-  const { error, executiveMode } = useOpsStore();
+  const { error, executiveMode, provider, cloudStatus, isAggregate } = useOpsStore();
+
+  // Check if the current provider is configured
+  const currentStatus = cloudStatus?.[provider as keyof typeof cloudStatus];
+  const isConfigured = currentStatus?.installed && currentStatus?.authenticated;
+
+  // Show setup instructions if provider is not configured (and not in aggregate mode)
+  if (cloudStatus && !isAggregate && !isConfigured) {
+    return <SetupInstructions />;
+  }
 
   if (error) {
     return (

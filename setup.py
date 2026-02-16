@@ -11,9 +11,15 @@ setup(
         "uvicorn",
         "google-cloud-storage",
         "google-cloud-compute",
+        "google-cloud-bigquery",
+        "google-auth",
         "azure-mgmt-compute",
+        "azure-identity",
+        "azure-mgmt-costmanagement",
         "boto3",
-        "pandas"
+        "pandas",
+        "pyyaml",
+        "rich",
     ],
     entry_points={
         "console_scripts": [
