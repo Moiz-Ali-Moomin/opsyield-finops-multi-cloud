@@ -1,3 +1,4 @@
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useOpsStore } from '@/store/useOpsStore';
 import { Button } from '@/components/ui/button';
@@ -8,17 +9,15 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
+    const navigate = useNavigate();
+    const location = useLocation();
     const { provider, setProvider, loading, fetchData, isAggregate, setAggregateMode, fetchCloudStatus, cloudStatus, executiveMode, setExecutiveMode } = useOpsStore();
 
     useEffect(() => {
         fetchCloudStatus();
     }, []);
 
-    const isProviderReady = (key: string) => {
-        if (!cloudStatus) return false; // fast fail
-        const status = cloudStatus[key as keyof typeof cloudStatus];
-        return status?.installed && status?.authenticated;
-    };
+
 
     return (
         <div className="min-h-screen bg-background flex flex-col font-sans text-foreground">
@@ -47,16 +46,19 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                         <nav className="flex items-center gap-1 bg-secondary/50 p-1 rounded-lg">
                             <TooltipProvider>
                                 {['gcp', 'aws', 'azure'].map((p) => {
-                                    const ready = isProviderReady(p);
+                                    const status = cloudStatus?.[p as keyof typeof cloudStatus];
+                                    const ready = status?.installed && status?.authenticated;
+                                    const error = status?.error;
+
                                     return (
                                         <Tooltip key={p}>
                                             <TooltipTrigger asChild>
                                                 <span>
                                                     <Button
-                                                        variant={!isAggregate && provider === p ? 'default' : 'ghost'}
+                                                        variant={location.pathname === '/' && !isAggregate && provider === p ? 'default' : 'ghost'}
                                                         size="sm"
-                                                        onClick={() => setProvider(p)}
-                                                        className={`text-xs ${!ready ? 'opacity-75' : ''}`}
+                                                        onClick={() => { setProvider(p); navigate('/'); }}
+                                                        className={`text-xs ${!ready ? 'opacity-75' : ''} ${error ? 'text-destructive' : ''}`}
                                                     >
                                                         {p.toUpperCase()}
                                                     </Button>
@@ -64,7 +66,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                                             </TooltipTrigger>
                                             {!ready && (
                                                 <TooltipContent>
-                                                    <p>Not Configured</p>
+                                                    <p>{error || 'Not Configured'}</p>
+                                                    {p === 'gcp' && error?.includes('google-cloud-bigquery') && (
+                                                        <p className="text-xs font-mono mt-1 bg-black/20 p-1 rounded">
+                                                            pip install google-cloud-bigquery google-auth
+                                                        </p>
+                                                    )}
                                                 </TooltipContent>
                                             )}
                                         </Tooltip>
@@ -74,13 +81,23 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
                             <div className="w-px h-4 bg-border mx-1" />
                             <Button
-                                variant={isAggregate ? 'default' : 'ghost'}
+                                variant={location.pathname === '/' && isAggregate ? 'default' : 'ghost'}
                                 size="sm"
-                                onClick={() => setAggregateMode(true)}
+                                onClick={() => { setAggregateMode(true); navigate('/'); }}
                                 className="text-xs font-bold"
                             >
                                 AGGREGATE
                             </Button>
+                            <div className="w-px h-4 bg-border mx-1" />
+                            <Link to="/instructions">
+                                <Button
+                                    variant={location.pathname === '/instructions' ? 'default' : 'ghost'}
+                                    size="sm"
+                                    className="text-xs font-bold"
+                                >
+                                    INSTRUCTIONS
+                                </Button>
+                            </Link>
                         </nav>
 
                         <Button variant="outline" size="icon" onClick={() => fetchData()} disabled={loading}>

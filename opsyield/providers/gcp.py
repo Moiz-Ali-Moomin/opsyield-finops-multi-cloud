@@ -234,27 +234,26 @@ class GCPProvider:
         """
         Synchronous BigQuery cost retrieval — called via asyncio.to_thread().
 
-        Returns List[NormalizedCost] or empty list on any failure.
+        Raises ValueError with actionable messages on setup issues.
+        Returns List[NormalizedCost] on success.
         """
         if not HAS_BIGQUERY:
-            logger.warning(
-                "[GCP Costs] google-cloud-bigquery not installed. "
+            raise ValueError(
+                "google-cloud-bigquery is not installed. "
                 "Run: pip install google-cloud-bigquery"
             )
-            return []
 
         try:
             project_id = self._resolve_project_id()
-        except ValueError as e:
-            logger.error(f"[GCP Costs] {e}")
-            return []
+        except ValueError:
+            raise
 
         query = self._build_cost_query(project_id, days)
+        start_date = (datetime.utcnow() - timedelta(days=days)).strftime('%Y-%m-%d')
         logger.info(
             f"[GCP Costs] Querying BigQuery — "
             f"project={project_id}, dataset={self._BQ_DATASET}, "
-            f"start_date={(datetime.utcnow() - timedelta(days=days)).strftime('%Y-%m-%d')}, "
-            f"days={days}"
+            f"start_date={start_date}, days={days}"
         )
 
         t0 = time.monotonic()
@@ -303,32 +302,31 @@ class GCPProvider:
             error_type = type(e).__name__
             error_msg = str(e)
 
-            # ── Specific error handling ──
+            # ── Structured error handling with actionable messages ──
             if gcp_exceptions and isinstance(e, gcp_exceptions.NotFound):
-                logger.error(
-                    f"[GCP Costs] BigQuery dataset/table not found ({elapsed:.2f}s). "
-                    f"Ensure billing export is enabled in GCP Console → Billing → "
-                    f"Billing export → BigQuery export. "
-                    f"Expected table: {project_id}.{self._BQ_DATASET}.{self._BQ_TABLE_PATTERN}"
+                raise ValueError(
+                    f"Billing export not enabled. "
+                    f"Expected table: {project_id}.{self._BQ_DATASET}.{self._BQ_TABLE_PATTERN}\n"
+                    f"Please run: opsyield gcp setup\n"
+                    f"Or enable manually: GCP Console → Billing → Billing export → BigQuery export"
                 )
             elif gcp_exceptions and isinstance(e, gcp_exceptions.Forbidden):
-                logger.error(
-                    f"[GCP Costs] Permission denied ({elapsed:.2f}s). "
-                    f"Ensure the authenticated account has these IAM roles: "
-                    f"roles/bigquery.dataViewer, roles/bigquery.jobUser. "
-                    f"Error: {error_msg}"
+                raise ValueError(
+                    f"Permission denied accessing billing data. "
+                    f"Required IAM roles: roles/bigquery.dataViewer, roles/bigquery.jobUser\n"
+                    f"Grant access: gcloud projects add-iam-policy-binding {project_id} "
+                    f"--member='user:<EMAIL>' --role='roles/bigquery.dataViewer'"
                 )
             elif gcp_exceptions and isinstance(e, gcp_exceptions.BadRequest):
                 logger.error(
-                    f"[GCP Costs] Bad query ({elapsed:.2f}s). "
-                    f"The billing export table structure may differ. Error: {error_msg}"
+                    f"[GCP Costs] Bad query ({elapsed:.2f}s): {error_msg}"
                 )
+                return []
             else:
                 logger.error(
                     f"[GCP Costs] {error_type} after {elapsed:.2f}s: {error_msg}"
                 )
-
-            return []
+                return []
 
     async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
         """

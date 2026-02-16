@@ -1,4 +1,30 @@
-google-cloud-compute
-google-auth
+# Core Web / API
+fastapi
+uvicorn[standard]
+
+# CLI & UX
 click
 rich
+
+# AWS
+boto3
+
+# GCP
+google-cloud-bigquery
+google-cloud-compute
+google-auth
+google-api-core
+
+# Azure
+azure-identity
+azure-mgmt-resource
+azure-mgmt-compute
+azure-mgmt-costmanagement
+
+# Utilities
+python-dotenv
+pydantic
+httpx
+
+# Optional but useful
+tenacity

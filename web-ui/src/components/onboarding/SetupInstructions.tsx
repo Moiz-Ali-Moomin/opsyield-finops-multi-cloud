@@ -1,14 +1,17 @@
 
 import { useOpsStore } from '@/store/useOpsStore';
 
-const SETUP_STEPS: Record<string, { title: string; steps: { label: string; command: string }[] }> = {
+export const SETUP_STEPS: Record<string, { title: string; steps: { label: string; command: string; note?: string }[] }> = {
     gcp: {
         title: 'Setup GCP Connectivity',
         steps: [
             { label: 'Install Google Cloud CLI', command: 'https://cloud.google.com/sdk/docs/install' },
             { label: 'Login & Authenticate', command: 'gcloud auth login' },
             { label: 'Set Active Project', command: 'gcloud config set project YOUR_PROJECT_ID' },
+            { label: 'Install Python Libraries', command: 'pip install google-cloud-bigquery google-auth' },
             { label: 'Login Application Default Credentials', command: 'gcloud auth application-default login' },
+            { label: 'Verify BigQuery Dataset', command: 'bq ls YOUR_PROJECT_ID' },
+            { label: 'Verify Cost Data (BigQuery)', command: 'bq query --use_legacy_sql=false "SELECT SUM(cost) as total_cost FROM `YOUR_PROJECT_ID.billing_export.gcp_billing_export_v1_*` WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)"', note: 'If table not found: Billing Export not enabled.' },
         ],
     },
     aws: {
@@ -18,15 +21,25 @@ const SETUP_STEPS: Record<string, { title: string; steps: { label: string; comma
             { label: 'Configure Credentials', command: 'aws configure' },
             { label: 'Verify Identity', command: 'aws sts get-caller-identity' },
             { label: 'Enable Cost Explorer (Console)', command: 'https://console.aws.amazon.com/cost-management/home#/cost-explorer' },
+            {
+                label: 'Verify Cost Data (AWS CLI)',
+                command: 'aws ce get-cost-and-usage --time-period Start=2024-01-01,End=2024-01-31 --granularity=MONTHLY --metrics BlendedCost',
+                note: 'If AccessDeniedException: Cost Explorer not enabled or missing permissions.'
+            },
         ],
     },
     azure: {
         title: 'Setup Azure Connectivity',
         steps: [
-            { label: 'Install Azure CLI', command: 'https://learn.microsoft.com/en-us/cli/azure/install-azure-cli' },
             { label: 'Login to Azure', command: 'az login' },
             { label: 'Set Active Subscription', command: 'az account set --subscription YOUR_SUBSCRIPTION_ID' },
-            { label: 'Verify Account', command: 'az account show' },
+            { label: 'Get User ID', command: 'az ad signed-in-user show --query id -o tsv' },
+            { label: 'Assign Cost Reader Role', command: 'az role assignment create --assignee YOUR_USER_ID --role "Cost Management Reader" --scope "/subscriptions/YOUR_SUBSCRIPTION_ID"' },
+            {
+                label: 'Verify Cost Data (Azure REST)',
+                command: 'az rest --method post --uri "https://management.azure.com/subscriptions/YOUR_SUBSCRIPTION_ID/providers/Microsoft.CostManagement/query?api-version=2023-03-01" --body "{\\"type\\":\\"ActualCost\\",\\"timeframe\\":\\"MonthToDate\\",\\"dataset\\":{\\"granularity\\":\\"Daily\\"}}"',
+                note: 'If 403: RBAC missing. If empty: Billing delay (up to 24h).'
+            },
         ],
     },
 };
@@ -75,6 +88,11 @@ export function SetupInstructions() {
                             <div className="bg-black/40 rounded-lg px-4 py-2.5 font-mono text-sm text-green-400 select-all">
                                 {step.command}
                             </div>
+                        )}
+                        {step.note && (
+                            <p className="text-xs text-muted-foreground italic border-l-2 border-primary/50 pl-2 mt-1">
+                                {step.note}
+                            </p>
                         )}
                     </div>
                 ))}

@@ -10,6 +10,7 @@ import { SetupInstructions } from './components/onboarding/SetupInstructions';
 import { useOpsStore } from './store/useOpsStore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
+import { InstructionsPage } from './pages/InstructionsPage';
 
 function Dashboard() {
   const { error, executiveMode, provider, cloudStatus, isAggregate } = useOpsStore();
@@ -59,6 +60,7 @@ function App() {
       <DashboardLayout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/instructions" element={<InstructionsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </DashboardLayout>

@@ -50,6 +50,17 @@ def main():
     serve_parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
 
+    # GCP Command Group
+    gcp_parser = subparsers.add_parser("gcp", help="GCP-specific commands")
+    gcp_subparsers = gcp_parser.add_subparsers(dest="gcp_command", help="GCP actions")
+
+    # GCP Setup
+    gcp_setup_parser = gcp_subparsers.add_parser("setup", help="Configure GCP billing export to BigQuery")
+    gcp_setup_parser.add_argument("--project-id", type=str, help="GCP Project ID (auto-detected from ADC if omitted)")
+    gcp_setup_parser.add_argument("--billing-account", type=str, help="Billing Account ID (e.g. 01A2B3-C4D5E6-F7G8H9)")
+    gcp_setup_parser.add_argument("--dataset", type=str, default="billing_export", help="BigQuery dataset name")
+    gcp_setup_parser.add_argument("--location", type=str, default="US", help="BigQuery dataset location")
+
     args = parser.parse_args()
 
     if args.command == "analyze":
@@ -63,6 +74,11 @@ def main():
         asyncio.run(run_diff(args))
     elif args.command == "serve":
         run_serve(args)
+    elif args.command == "gcp":
+        if hasattr(args, 'gcp_command') and args.gcp_command == "setup":
+            run_gcp_setup(args)
+        else:
+            gcp_parser.print_help()
     else:
         parser.print_help()
 
@@ -127,6 +143,102 @@ async def run_diff(args):
 def run_serve(args):
     import uvicorn
     uvicorn.run("opsyield.api.main:app", host=args.host, port=args.port, reload=True)
+
+
+def run_gcp_setup(args):
+    """Run GCP billing export automation with Rich output."""
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        HAS_RICH = True
+    except ImportError:
+        HAS_RICH = False
+
+    from ..automation.gcp_setup import run_full_setup, GCPSetupError
+
+    if HAS_RICH:
+        console = Console()
+        console.print("\n[bold blue]OpsYield[/bold blue] — GCP Billing Export Setup\n")
+    else:
+        print("\nOpsYield — GCP Billing Export Setup\n")
+
+    try:
+        result = run_full_setup(
+            project_id=getattr(args, 'project_id', None),
+            billing_account_id=getattr(args, 'billing_account', None),
+            dataset_id=getattr(args, 'dataset', 'billing_export'),
+            location=getattr(args, 'location', 'US'),
+        )
+    except GCPSetupError as e:
+        if HAS_RICH:
+            console.print(f"[red bold]✗ Error ({e.step}):[/red bold] {e}")
+            if e.hint:
+                console.print(f"  [yellow]Hint:[/yellow] {e.hint}")
+        else:
+            print(f"ERROR ({e.step}): {e}")
+            if e.hint:
+                print(f"  Hint: {e.hint}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        sys.exit(1)
+
+    # ── Print Results ──
+    if HAS_RICH:
+        # Steps table
+        table = Table(title="Setup Steps", show_header=True, header_style="bold cyan")
+        table.add_column("Step", style="bold")
+        table.add_column("Status")
+        table.add_column("Details")
+
+        for step_name, step_data in result.get("steps", {}).items():
+            status = step_data.get("status", "unknown")
+            if status == "error":
+                status_str = "[red]✗ Error[/red]"
+            elif status in ("ok", "exists", "created"):
+                status_str = "[green]✓ OK[/green]"
+            elif status == "skipped":
+                status_str = "[yellow]⊘ Skipped[/yellow]"
+            else:
+                status_str = f"[dim]{status}[/dim]"
+
+            details = step_data.get("message", step_data.get("error", ""))
+            if not details:
+                details = json.dumps({k: v for k, v in step_data.items() if k != "status"}, default=str)[:80]
+
+            table.add_row(step_name.upper(), status_str, str(details)[:80])
+
+        console.print(table)
+        console.print(f"\n[dim]Completed in {result.get('elapsed_s', '?')}s[/dim]")
+
+        # Overall result
+        if result.get("success"):
+            console.print(Panel(
+                f"[green bold]✓ {result.get('message', 'Setup complete')}[/green bold]",
+                border_style="green",
+            ))
+        else:
+            console.print(Panel(
+                f"[yellow bold]⚠ {result.get('message', 'Setup incomplete')}[/yellow bold]",
+                border_style="yellow",
+            ))
+
+        # Next steps
+        next_steps = result.get("next_steps", [])
+        if next_steps:
+            console.print("\n[bold]Next Steps:[/bold]")
+            for step in next_steps:
+                if step:  # skip empty lines
+                    console.print(f"  {step}")
+                else:
+                    console.print()
+    else:
+        # Plain text fallback
+        print(json.dumps(result, indent=2, default=str))
+
+    sys.exit(0 if result.get("success") else 1)
+
 
 if __name__ == "__main__":
     main()

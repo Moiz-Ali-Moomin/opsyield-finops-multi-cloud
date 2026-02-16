@@ -6,15 +6,18 @@ export interface CloudStatus {
     gcp: {
         installed: boolean;
         authenticated: boolean;
+        error?: string;
         projects?: { id: string; name: string }[];
     };
     aws: {
         installed: boolean;
         authenticated: boolean;
+        error?: string;
     };
     azure: {
         installed: boolean;
         authenticated: boolean;
+        error?: string;
         subscriptions?: { id: string; name: string }[];
     };
 }
