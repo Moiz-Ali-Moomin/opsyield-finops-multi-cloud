@@ -9,11 +9,28 @@ export function RiskHeatmap() {
     // Mock data based on data.resources
     const resources = data?.resources || [];
 
+    const computeRisk = (r: any) => {
+        const state = String(r.state || "").toLowerCase();
+        const running = state.includes("running");
+        const idleScore = typeof r.idle_score === "number" ? r.idle_score : 0;
+        const cost = typeof r.cost_30d === "number" ? r.cost_30d : 0;
+        const hasExternalIp = Boolean(r.external_ip);
+
+        let risk = 0;
+        if (running) risk += 20;
+        if (!hasExternalIp) risk += 10;
+        risk += Math.min(60, idleScore * 0.6);
+        if (cost > 100) risk += 20;
+        if (cost > 500) risk += 20;
+
+        return Math.max(0, Math.min(100, risk));
+    };
+
     // Group method for heatmap (just list for now as an example)
     const riskItems = resources.map(r => ({
         id: r.id,
         name: r.name,
-        risk: Math.random() * 100 // Mock risk score
+        risk: computeRisk(r)
     })).sort((a, b) => b.risk - a.risk).slice(0, 20);
 
     return (

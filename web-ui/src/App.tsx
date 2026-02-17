@@ -6,6 +6,7 @@ import { KPIGrid } from './components/dashboard/KPIGrid';
 import { SpendTrendChart } from './components/charts/SpendTrendChart';
 import { ForecastChart } from './components/charts/ForecastChart';
 import { RiskHeatmap } from './components/dashboard/RiskHeatmap';
+import { FinOpsInsights } from './components/dashboard/FinOpsInsights';
 import { SetupInstructions } from './components/onboarding/SetupInstructions';
 import { useOpsStore } from './store/useOpsStore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -44,6 +45,8 @@ function Dashboard() {
         <SpendTrendChart />
         <ForecastChart />
       </div>
+
+      <FinOpsInsights />
 
       {executiveMode && (
         <div className="grid grid-cols-1 gap-6">

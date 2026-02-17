@@ -33,7 +33,11 @@ async def get_cloud_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/aggregate")
-async def aggregate(providers: str = Query(..., description="Comma-separated list of providers"), days: int = 30):
+async def aggregate(
+    providers: str = Query(..., description="Comma-separated list of providers"), 
+    days: int = 30,
+    subscription_id: Optional[str] = None
+):
     """
     Aggregate analysis across multiple providers.
     """
@@ -42,7 +46,7 @@ async def aggregate(providers: str = Query(..., description="Comma-separated lis
         provider_list = [p.strip() for p in providers.split(',')]
         logger.info(f"Aggregating providers: {provider_list}")
         orchestrator = Orchestrator()
-        result = await orchestrator.aggregate_analysis(provider_list, days=days)
+        result = await orchestrator.aggregate_analysis(provider_list, days=days, subscription_id=subscription_id)
         logger.info(f"Orchestrator returned result type: {type(result)}")
         return adapt_analysis_result(result)
     except Exception as e:
@@ -53,7 +57,8 @@ async def aggregate(providers: str = Query(..., description="Comma-separated lis
 async def analyze_cost(
     provider: str, 
     days: int = 30, 
-    project_id: Optional[str] = None
+    project_id: Optional[str] = None,
+    subscription_id: Optional[str] = None
 ):
     """
     Analyze cost for a specific provider.
@@ -65,7 +70,8 @@ async def analyze_cost(
         result = await orchestrator.analyze(
             provider_name=provider,
             days=days,
-            project_id=project_id
+            project_id=project_id,
+            subscription_id=subscription_id
         )
         return adapt_analysis_result(result)
     except ValueError as e:

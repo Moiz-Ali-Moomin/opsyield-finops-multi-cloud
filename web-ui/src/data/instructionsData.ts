@@ -33,9 +33,15 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
                 title: '1. Enable BigQuery Billing Export (MANDATORY)',
                 items: [
                     {
-                        text: 'Billing Export MUST be enabled before cost data can be queried. Initial setup cannot be done via CLI.'
+                        text: 'Billing Export MUST be enabled before cost data can be queried. You can use automated setup or manual Console setup.'
                     },
                     {
+                        label: 'Option A: Automated Setup (Recommended)',
+                        code: 'opsyield gcp setup --project-id YOUR_PROJECT_ID --billing-account BILLING_ACCOUNT_ID',
+                        note: 'This command will create the BigQuery dataset and verify billing configuration. You may still need to enable export in Console if not already done.'
+                    },
+                    {
+                        label: 'Option B: Manual Console Setup',
                         list: [
                             'Go to GCP Console > Billing > Billing Export',
                             'Select "Standard usage cost export"',
@@ -46,7 +52,7 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
                         ]
                     },
                     {
-                        note: 'Historical data is NOT backfilled. First data may take 4–24 hours to appear.'
+                        note: 'Historical data is NOT backfilled. First data may take 4–24 hours to appear after enabling export.'
                     }
                 ]
             },
@@ -215,10 +221,10 @@ WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
                         code: `aws ce get-cost-and-usage \\
   --time-period Start=YYYY-MM-DD,End=YYYY-MM-DD \\
   --granularity=MONTHLY \\
-  --metrics BlendedCost`
+  --metrics UnblendedCost`
                     },
                     {
-                        note: 'Use a valid past date range.'
+                        note: 'Use a valid past date range. OpsYield uses UnblendedCost metric for consistency.'
                     }
                 ]
             }

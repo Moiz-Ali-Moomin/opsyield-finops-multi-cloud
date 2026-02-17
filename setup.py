@@ -23,7 +23,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "opsyield=opsyield.cli.main:cli",
+            "opsyield=opsyield.cli.main:main",
         ],
     },
 )

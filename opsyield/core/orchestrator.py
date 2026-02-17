@@ -10,6 +10,8 @@ from ..analytics.engine import AnalyticsEngine
 from ..governance.engine import PolicyEngine
 from ..risk.engine import RiskEngine
 from ..optimization.engine import OptimizationEngine
+from ..analysis.idle_scoring import IdleScorer
+from ..analysis.waste_detector import WasteDetector
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +35,41 @@ class Orchestrator:
         """
         # logger.info(f"Starting analysis for {provider_name} over {days} days")
         
-        provider = self.provider_factory.get_provider(provider_name)
+        subscription_id = kwargs.get("subscription_id")
+        project_id = kwargs.get("project_id")
+        provider = self.provider_factory.get_provider(
+            provider_name,
+            subscription_id=subscription_id,
+            project_id=project_id,
+        )
         
         # 1. Fetch Data
         costs = await provider.get_costs(days=days)
         resources = await provider.get_infrastructure()
+
+        # Optional: enrich resources with per-resource costs if provider supports it
+        resource_cost_map: Dict[str, Dict[str, Any]] = {}
+        if hasattr(provider, "get_resource_costs"):
+            try:
+                resource_cost_map = await provider.get_resource_costs(days=days)  # type: ignore[attr-defined]
+            except Exception as e:
+                logger.info(f"Resource-cost enrichment skipped: {e}")
+
+        if resource_cost_map and resources:
+            for r in resources:
+                # Best-effort match by name or id
+                key_candidates = [r.name, r.id]
+                found = None
+                for k in key_candidates:
+                    if k and k in resource_cost_map:
+                        found = resource_cost_map[k]
+                        break
+                if found:
+                    r.cost_30d = found.get("cost_30d")
+                    r.currency = found.get("currency")
+                    # optionally override type for display
+                    if not r.type and found.get("service"):
+                        r.type = str(found.get("service"))
         
         # 2. Optimization
         optimizations = self.optimization.analyze(costs)
@@ -70,6 +102,93 @@ class Orchestrator:
         daily_trends.sort(key=lambda x: x["date"])
         
         # 6. Construct Result
+        # Enrichment: cost drivers (top services)
+        service_totals: Dict[str, float] = defaultdict(float)
+        currency = "USD"
+        for c in costs:
+            service_totals[c.service] += float(c.cost or 0)
+            currency = c.currency or currency
+
+        cost_drivers = [
+            {"service": s, "cost": round(v, 4), "currency": currency}
+            for s, v in sorted(service_totals.items(), key=lambda kv: kv[1], reverse=True)[:10]
+        ]
+
+        # Enrichment: resource type counts + running count + idle/waste heuristics
+        resource_types: Dict[str, int] = defaultdict(int)
+        running_count = 0
+        idle_scorer = IdleScorer()
+        waste_detector = WasteDetector()
+        idle_resources: List[Dict[str, Any]] = []
+
+        now = datetime.utcnow()
+
+        resource_dicts_for_waste: List[Dict[str, Any]] = []
+        for r in resources:
+            resource_types[r.type] += 1
+            state = (r.state or "").lower()
+            if "running" in state:
+                running_count += 1
+
+            days_running = 0
+            if r.creation_date:
+                try:
+                    days_running = (now - r.creation_date.replace(tzinfo=None)).days
+                except Exception:
+                    days_running = 0
+
+            # basic idle heuristics:
+            # - no external IP (often internal-only workloads)
+            # - long running
+            # - very low 30d cost if available
+            resource_like = {
+                "external_ip": r.external_ip,
+                "days_running": days_running,
+            }
+            idle_score = idle_scorer.calculate_score(resource_like, cpu_avg=None)
+            if r.cost_30d is not None and r.cost_30d < 1 and "running" in state:
+                idle_score += 40
+            r.idle_score = min(100, int(idle_score))
+
+            if r.idle_score >= 70:
+                idle_resources.append({
+                    "id": r.id,
+                    "name": r.name,
+                    "type": r.type,
+                    "class_type": r.class_type,
+                    "region": r.region,
+                    "state": r.state,
+                    "idle_score": r.idle_score,
+                    "cost_30d": r.cost_30d,
+                    "currency": r.currency,
+                    "days_running": days_running,
+                })
+
+            resource_dicts_for_waste.append({
+                "name": r.name,
+                "type": r.type,
+                "external_ip": r.external_ip,
+                "created_at": r.creation_date,
+            })
+
+        waste_findings = waste_detector.detect(resource_dicts_for_waste) if resources else []
+
+        # High-cost resources (if we have per-resource costs)
+        high_cost_resources = []
+        costy = [r for r in resources if r.cost_30d is not None]
+        if costy:
+            for r in sorted(costy, key=lambda x: float(x.cost_30d or 0), reverse=True)[:10]:
+                high_cost_resources.append({
+                    "id": r.id,
+                    "name": r.name,
+                    "type": r.type,
+                    "class_type": r.class_type,
+                    "region": r.region,
+                    "state": r.state,
+                    "cost_30d": r.cost_30d,
+                    "currency": r.currency,
+                })
+
         result = AnalysisResult(
             meta={
                 "provider": provider_name,
@@ -90,17 +209,23 @@ class Orchestrator:
             forecast=analytics_results.get("forecast", {}),
             governance_issues=policy_violations,
             optimizations=optimizations,
-            resources=resources
+            resources=resources,
+            cost_drivers=cost_drivers,
+            resource_types=dict(resource_types),
+            running_count=running_count,
+            high_cost_resources=high_cost_resources,
+            idle_resources=idle_resources,
+            waste_findings=waste_findings,
         )
         
         return result
 
-    async def aggregate_analysis(self, providers: List[str], days: int = 30) -> Dict[str, Any]:
+    async def aggregate_analysis(self, providers: List[str], days: int = 30, subscription_id: str = None) -> Dict[str, Any]:
         """
         Aggregates analysis across multiple providers.
         """
         # Run analysis for each provider in parallel
-        tasks = [self.analyze(p, days) for p in providers]
+        tasks = [self.analyze(p, days, subscription_id=subscription_id) for p in providers]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Merge results

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import axios from 'axios';
 import { api, AnalysisResult, CloudStatus } from '../api/client';
 
 interface OpsState {
@@ -125,10 +126,17 @@ export const useOpsStore = create<OpsState>((set, get) => ({
 
             set({ data: normalizedData, loading: false });
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
+            let message = 'Failed to fetch data';
+            if (axios.isAxiosError(err)) {
+                const detail = (err.response?.data as any)?.detail;
+                message = detail || err.message || message;
+            } else if (err && typeof err === 'object' && 'message' in err) {
+                message = String((err as any).message || message);
+            }
             set({
-                error: err.response?.data?.detail || err.message || 'Failed to fetch data',
+                error: message,
                 loading: false,
                 data: null
             });

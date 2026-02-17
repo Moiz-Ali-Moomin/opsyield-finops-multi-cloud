@@ -29,7 +29,7 @@ export interface Resource {
     provider: string;
     region?: string;
     creation_date?: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export interface NormalizedCost {
@@ -56,10 +56,17 @@ export interface AnalysisResult {
         currency?: string;
     };
     trends: NormalizedCost[];
-    anomalies: any[];
-    forecast: any[];
-    governance_issues: any[];
+    anomalies: unknown[];
+    forecast: unknown[];
+    governance_issues: unknown[];
     resources: Resource[];
+    // Optional enrichment fields from backend
+    cost_drivers?: { service: string; cost: number; currency?: string }[];
+    resource_types?: Record<string, number>;
+    running_count?: number;
+    high_cost_resources?: unknown[];
+    idle_resources?: unknown[];
+    waste_findings?: unknown[];
 }
 
 export const api = axios.create({

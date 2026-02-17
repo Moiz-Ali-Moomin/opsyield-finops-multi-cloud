@@ -19,7 +19,7 @@ try:
 except ImportError:
     HAS_BOTO3 = False
 
-from ..core.models import NormalizedCost
+from ..core.models import NormalizedCost, Resource
 
 logger = logging.getLogger("opsyield-aws")
 
@@ -186,7 +186,63 @@ class AWSProvider:
         return costs
 
     async def get_infrastructure(self) -> List:
-        return []
+        if not HAS_BOTO3:
+            return []
+
+        import asyncio
+        return await asyncio.to_thread(self._sync_get_infrastructure)
+
+    def _sync_get_infrastructure(self) -> List[Resource]:
+        """
+        Minimal AWS inventory: EC2 instances.
+
+        Returns Resource objects enriched with extra fields (via dataclass attrs):
+          - state, class_type(instance_type), external_ip
+        """
+        resources: List[Resource] = []
+        try:
+            session = boto3.Session(
+                profile_name=self.profile,
+                region_name=self.region,
+            ) if self.profile else boto3.Session(region_name=self.region)
+
+            ec2 = session.client("ec2")
+            paginator = ec2.get_paginator("describe_instances")
+
+            for page in paginator.paginate():
+                for reservation in page.get("Reservations", []):
+                    for inst in reservation.get("Instances", []):
+                        instance_id = inst.get("InstanceId", "")
+                        instance_type = inst.get("InstanceType", "unknown")
+                        state = (inst.get("State") or {}).get("Name", "unknown")
+                        launch_time = inst.get("LaunchTime")
+                        name_tag = ""
+                        for t in inst.get("Tags", []) or []:
+                            if t.get("Key") == "Name":
+                                name_tag = t.get("Value") or ""
+                                break
+
+                        public_ip = inst.get("PublicIpAddress")
+
+                        r = Resource(
+                            id=instance_id,
+                            name=name_tag or instance_id,
+                            type="ec2_instance",
+                            provider="aws",
+                            region=self.region,
+                            creation_date=launch_time,
+                        )
+
+                        # Extra fields (frontend allows [key: string]: any)
+                        setattr(r, "state", state)
+                        setattr(r, "class_type", instance_type)
+                        setattr(r, "external_ip", public_ip)
+                        resources.append(r)
+
+        except Exception as e:
+            logger.error(f"AWS infrastructure fetch failed: {e}")
+
+        return resources
 
     def get_resource_metadata(self, resource_id: str) -> dict:
         return {"id": resource_id, "provider": "aws"}

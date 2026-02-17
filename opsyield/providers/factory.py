@@ -82,10 +82,27 @@ class ProviderFactory:
     }
 
     @classmethod
-    def get_provider(cls, provider_name: str):
+    def get_provider(
+        cls,
+        provider_name: str,
+        subscription_id: str = None,
+        project_id: str = None,
+        **kwargs,
+    ):
         provider_class = cls._providers.get(provider_name.lower())
         if not provider_class:
             raise ValueError(f"Unknown provider: {provider_name}")
+
+        name = provider_name.lower()
+
+        # Provider-specific constructor args
+        if name == "azure":
+            return provider_class(subscription_id=subscription_id)
+
+        if name == "gcp":
+            return provider_class(project_id=project_id)
+
+        # AWS + others
         return provider_class()
 
     @classmethod

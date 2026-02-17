@@ -14,9 +14,9 @@ import subprocess
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
-from ..core.models import NormalizedCost
+from ..core.models import NormalizedCost, Resource
 
 logger = logging.getLogger("opsyield-gcp")
 
@@ -94,6 +94,7 @@ class GCPProvider:
     # BigQuery billing export dataset/table pattern
     _BQ_DATASET = "billing_export"
     _BQ_TABLE_PATTERN = "gcp_billing_export_v1_*"
+    _BQ_RESOURCE_TABLE_PATTERN = "gcp_billing_export_resource_v1_*"
 
     def __init__(self, project_id: str = None, credentials_path: str = None):
         self.project_id = project_id
@@ -343,11 +344,161 @@ class GCPProvider:
         return await asyncio.to_thread(self._get_costs_sync, days)
 
     # ─────────────────────────────────────────────────
+    # Resource-level costs (best-effort)
+    # ─────────────────────────────────────────────────
+
+    def _build_resource_cost_query(self, project_id: str, days: int) -> str:
+        """
+        Build a BigQuery SQL query to estimate per-resource costs using the
+        resource-level billing export table (if enabled).
+        """
+        start_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        table = f"`{project_id}.{self._BQ_DATASET}.{self._BQ_RESOURCE_TABLE_PATTERN}`"
+
+        # Note: schema differs across exports; this is best-effort and errors are handled.
+        return f"""
+            SELECT
+                COALESCE(resource.name, resource.global_name, resource.id) AS resource_key,
+                ANY_VALUE(service.description) AS service_name,
+                ANY_VALUE(currency) AS currency,
+                SUM(cost) AS total_cost
+            FROM {table}
+            WHERE
+                DATE(usage_start_time) >= '{start_date}'
+            GROUP BY
+                resource_key
+            ORDER BY
+                total_cost DESC
+            LIMIT 5000
+        """
+
+    def _get_resource_costs_sync(self, days: int) -> Dict[str, Dict[str, Any]]:
+        """
+        Return mapping: resource_key -> {cost_30d, currency, service}
+        """
+        if not HAS_BIGQUERY:
+            return {}
+
+        try:
+            project_id = self._resolve_project_id()
+        except Exception:
+            return {}
+
+        query = self._build_resource_cost_query(project_id, days)
+
+        try:
+            client = bigquery.Client(project=project_id)
+            rows = list(client.query(query).result())
+            out: Dict[str, Dict[str, Any]] = {}
+            for row in rows:
+                key = row.get("resource_key")
+                if not key:
+                    continue
+                raw_cost = row.get("total_cost", 0)
+                cost_float = float(raw_cost) if isinstance(raw_cost, Decimal) else float(raw_cost or 0)
+                out[str(key)] = {
+                    "cost_30d": round(cost_float, 4),
+                    "currency": row.get("currency", "USD"),
+                    "service": row.get("service_name", "Unknown"),
+                }
+            return out
+        except Exception as e:
+            # Resource export might not be enabled; treat as optional.
+            logger.info(f"[GCP Costs] Resource-cost query unavailable: {e}")
+            return {}
+
+    async def get_resource_costs(self, days: int = 30) -> Dict[str, Dict[str, Any]]:
+        """Async wrapper for resource-level cost map (best-effort)."""
+        return await asyncio.to_thread(self._get_resource_costs_sync, days)
+
+    # ─────────────────────────────────────────────────
     # Infrastructure (stub)
     # ─────────────────────────────────────────────────
 
     async def get_infrastructure(self) -> List:
-        return []
+        import asyncio
+        return await asyncio.to_thread(self._sync_get_infrastructure)
+
+    def _sync_get_infrastructure(self) -> List[Resource]:
+        """
+        Minimal GCP inventory: Compute Engine instances via Compute API.
+
+        Requires:
+          - google-cloud-compute installed
+          - credentials available via ADC (gcloud auth application-default login)
+          - compute API enabled (compute.googleapis.com) in the project
+        """
+        resources: List[Resource] = []
+
+        # Lazy import to avoid hard dependency
+        try:
+            from google.cloud import compute_v1
+        except Exception as e:
+            logger.warning(f"[GCP] google-cloud-compute not available: {e}")
+            return resources
+
+        try:
+            project_id = self._resolve_project_id()
+        except Exception as e:
+            logger.warning(f"[GCP] Could not resolve project id: {e}")
+            return resources
+
+        try:
+            client = compute_v1.InstancesClient()
+            req = compute_v1.AggregatedListInstancesRequest(project=project_id)
+
+            for zone, scoped_list in client.aggregated_list(request=req):
+                if not scoped_list or not scoped_list.instances:
+                    continue
+                # zone key format: "zones/us-central1-a"
+                zone_name = zone.split("/")[-1] if isinstance(zone, str) else None
+
+                for inst in scoped_list.instances:
+                    name = getattr(inst, "name", "") or ""
+                    instance_id = str(getattr(inst, "id", "") or name)
+                    status = getattr(inst, "status", None)
+                    machine_type_url = getattr(inst, "machine_type", "") or ""
+                    machine_type = machine_type_url.split("/")[-1] if machine_type_url else "unknown"
+                    creation_ts = getattr(inst, "creation_timestamp", None)
+
+                    external_ip: Optional[str] = None
+                    try:
+                        for ni in getattr(inst, "network_interfaces", []) or []:
+                            for ac in getattr(ni, "access_configs", []) or []:
+                                nat_ip = getattr(ac, "nat_i_p", None) or getattr(ac, "nat_ip", None)
+                                if nat_ip:
+                                    external_ip = nat_ip
+                                    break
+                            if external_ip:
+                                break
+                    except Exception:
+                        external_ip = None
+
+                    created_dt = None
+                    if creation_ts:
+                        try:
+                            # Example: "2026-02-16T19:20:37.172-07:00"
+                            created_dt = datetime.fromisoformat(str(creation_ts).replace("Z", "+00:00"))
+                        except Exception:
+                            created_dt = None
+
+                    r = Resource(
+                        id=instance_id,
+                        name=name or instance_id,
+                        type="compute_instance",
+                        provider="gcp",
+                        region=zone_name,
+                        creation_date=created_dt,
+                    )
+                    setattr(r, "state", status)
+                    setattr(r, "class_type", machine_type)
+                    setattr(r, "external_ip", external_ip)
+                    resources.append(r)
+
+        except Exception as e:
+            logger.error(f"[GCP] infrastructure fetch failed: {e}")
+
+        return resources
 
     def get_resource_metadata(self, resource_id: str) -> dict:
         return {"id": resource_id, "provider": "gcp"}
