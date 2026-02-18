@@ -143,106 +143,46 @@ class AWSProvider:
         import asyncio
         return await asyncio.to_thread(self._sync_get_costs, days)
 
-    def _sync_get_costs(self, days: int) -> List[NormalizedCost]:
-        costs = []
-        try:
-            session = boto3.Session(
-                profile_name=self.profile,
-                region_name=self.region,
-            ) if self.profile else boto3.Session(region_name=self.region)
+    async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
+        from ..billing.aws import AWSBillingProvider
+        billing = AWSBillingProvider(region=self.region)
+        return await billing.get_costs(days)
 
-            ce = session.client("ce")
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
-
-            response = ce.get_cost_and_usage(
-                TimePeriod={
-                    "Start": start_date.strftime("%Y-%m-%d"),
-                    "End": end_date.strftime("%Y-%m-%d"),
-                },
-                Granularity="DAILY",
-                Metrics=["UnblendedCost"],
-                GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
-            )
-
-            for rbt in response.get("ResultsByTime", []):
-                dt = datetime.strptime(rbt["TimePeriod"]["Start"], "%Y-%m-%d")
-                for group in rbt.get("Groups", []):
-                    amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
-                    if amount > 0.001:
-                        costs.append(NormalizedCost(
-                            provider="aws",
-                            service=group["Keys"][0],
-                            region=self.region,
-                            resource_id="aggregated",
-                            cost=round(amount, 4),
-                            currency="USD",
-                            timestamp=dt,
-                            tags={},
-                            environment="production",
-                        ))
-        except Exception as e:
-            logger.error(f"AWS cost fetch failed: {e}")
-        return costs
-
-    async def get_infrastructure(self) -> List:
+    async def get_infrastructure(self) -> List[Resource]:
+        """
+        Discovers infrastructure using modular collectors.
+        """
         if not HAS_BOTO3:
             return []
 
+        from ..collectors.aws.ec2 import EC2Collector
+        from ..collectors.aws.s3 import S3Collector
+        from ..collectors.aws.rds import RDSCollector
+
+        collectors = [
+            EC2Collector(region=self.region),
+            S3Collector(region=self.region),
+            RDSCollector(region=self.region)
+        ]
+
         import asyncio
-        return await asyncio.to_thread(self._sync_get_infrastructure)
-
-    def _sync_get_infrastructure(self) -> List[Resource]:
-        """
-        Minimal AWS inventory: EC2 instances.
-
-        Returns Resource objects enriched with extra fields (via dataclass attrs):
-          - state, class_type(instance_type), external_ip
-        """
-        resources: List[Resource] = []
-        try:
-            session = boto3.Session(
-                profile_name=self.profile,
-                region_name=self.region,
-            ) if self.profile else boto3.Session(region_name=self.region)
-
-            ec2 = session.client("ec2")
-            paginator = ec2.get_paginator("describe_instances")
-
-            for page in paginator.paginate():
-                for reservation in page.get("Reservations", []):
-                    for inst in reservation.get("Instances", []):
-                        instance_id = inst.get("InstanceId", "")
-                        instance_type = inst.get("InstanceType", "unknown")
-                        state = (inst.get("State") or {}).get("Name", "unknown")
-                        launch_time = inst.get("LaunchTime")
-                        name_tag = ""
-                        for t in inst.get("Tags", []) or []:
-                            if t.get("Key") == "Name":
-                                name_tag = t.get("Value") or ""
-                                break
-
-                        public_ip = inst.get("PublicIpAddress")
-
-                        r = Resource(
-                            id=instance_id,
-                            name=name_tag or instance_id,
-                            type="ec2_instance",
-                            provider="aws",
-                            region=self.region,
-                            creation_date=launch_time,
-                        )
-
-                        # Extra fields (frontend allows [key: string]: any)
-                        setattr(r, "state", state)
-                        setattr(r, "class_type", instance_type)
-                        setattr(r, "external_ip", public_ip)
-                        resources.append(r)
-
-        except Exception as e:
-            logger.error(f"AWS infrastructure fetch failed: {e}")
-
-        return resources
+        results = await asyncio.gather(*[c.collect() for c in collectors], return_exceptions=True)
+        
+        all_resources = []
+        for res in results:
+            if isinstance(res, list):
+                all_resources.extend(res)
+            else:
+                logger.error(f"[AWS] Collector failed: {res}")
+                
+        return all_resources
 
     def get_resource_metadata(self, resource_id: str) -> dict:
         return {"id": resource_id, "provider": "aws"}
+
+    async def get_utilization_metrics(self, resources: List[Resource], period_days: int = 7) -> List[Resource]:
+        if not HAS_BOTO3:
+            return resources
+        from ..collectors.aws.metrics import AWSMetricsCollector
+        collector = AWSMetricsCollector(region=self.region)
+        return await collector.collect_metrics(resources, period_days)

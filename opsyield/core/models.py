@@ -15,6 +15,11 @@ class NormalizedCost:
     cost: float
     currency: str
     timestamp: datetime
+    # Identity Hierarchy
+    account_id: Optional[str] = None       # AWS Account ID
+    subscription_id: Optional[str] = None  # Azure Subscription ID
+    project_id: Optional[str] = None       # GCP Project ID
+    # Context
     team: Optional[str] = None
     business_unit: Optional[str] = None
     environment: Optional[str] = None
@@ -22,20 +27,49 @@ class NormalizedCost:
 
 @dataclass
 class Resource:
+    """
+    Unified Resource Model (Tri-Cloud).
+    Captures state, utilization, and risk for any cloud resource.
+    """
+    # Identity
     id: str
     name: str
     type: str
-    provider: str
+    provider: str  # aws, gcp, azure
     region: Optional[str] = None
+    account_id: Optional[str] = None
+    subscription_id: Optional[str] = None
+    project_id: Optional[str] = None
+    
+    # Lifecycle
     creation_date: Optional[datetime] = None
-    # Optional enrichment fields (serialized to frontend)
-    state: Optional[str] = None                 # RUNNING/stopped/etc.
-    class_type: Optional[str] = None            # instance type / vm size / machine type
+    last_seen: Optional[datetime] = None
+    state: Optional[str] = None                 # RUNNING, STOPPED, TERMINATED, etc.
+    
+    # Metadata
+    tags: Dict[str, str] = field(default_factory=dict)
+    class_type: Optional[str] = None            # e.g., t3.micro, n1-standard-1
     external_ip: Optional[str] = None
+    
+    # Metrics (Averages over last window)
+    cpu_avg: Optional[float] = None
+    memory_avg: Optional[float] = None
+    network_io: Optional[float] = None
+    disk_io: Optional[float] = None
+    
+    # Financials
     cost_30d: Optional[float] = None
     currency: Optional[str] = None
+    
+    # Intelligence
+    risk_score: int = 0
+    efficiency_score: int = 0
     idle_score: Optional[int] = None
     waste_reasons: List[str] = field(default_factory=list)
+    optimizations: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Graph
+    dependencies: List[str] = field(default_factory=list) # List of resource IDs this resource depends on
 
 @dataclass
 class AnalysisResult:

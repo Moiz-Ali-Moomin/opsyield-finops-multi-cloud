@@ -15,6 +15,17 @@ class CloudProvider(ABC):
         pass
 
     @abstractmethod
+    def get_resource_metadata(self, resource_id: str) -> dict:
+        pass
+
+    async def get_utilization_metrics(self, resources: List[Resource], period_days: int = 7) -> List[Resource]:
+        """
+        Fetch utilization metrics (CPU, Memory, IO) for the given resources.
+        Returns the list of resources enriched with metrics.
+        """
+        return resources
+
+    @abstractmethod
     async def get_status(self) -> Dict[str, Any]:
         """Check provider status (installed, authenticated)"""
         pass

@@ -159,57 +159,40 @@ class AzureProvider:
         return await asyncio.to_thread(self.get_status_sync)
 
     async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
-        return []
+        from ..billing.azure import AzureBillingProvider
+        billing = AzureBillingProvider(subscription_id=self.subscription_id)
+        return await billing.get_costs(days)
 
-    async def get_infrastructure(self) -> List:
+    async def get_infrastructure(self) -> List[Resource]:
+        """
+        Discovers infrastructure using modular collectors.
+        """
+        from ..collectors.azure.compute import AzureComputeCollector
+        from ..collectors.azure.storage import AzureStorageCollector
+        from ..collectors.azure.sql import AzureSQLCollector
+
+        collectors = [
+            AzureComputeCollector(subscription_id=self.subscription_id),
+            AzureStorageCollector(subscription_id=self.subscription_id),
+            AzureSQLCollector(subscription_id=self.subscription_id)
+        ]
+
         import asyncio
-        return await asyncio.to_thread(self._sync_get_infrastructure)
-
-    def _sync_get_infrastructure(self) -> List[Resource]:
-        """
-        Minimal Azure inventory: VMs via Azure CLI.
-
-        Requires: az login
-        If subscription_id is set, it will be used; otherwise Azure CLI default subscription is used.
-        """
-        resources: List[Resource] = []
-        sub_flag = f" --subscription {self.subscription_id}" if self.subscription_id else ""
-
-        # `-d` includes public IPs, powerState, etc.
-        cmd = f"az vm list -d --output json{sub_flag}"
-        res = _run(cmd, timeout=60)
-        if not res.get("ok"):
-            logger.warning(f"[AZ] VM list failed: {res.get('stderr')}")
-            return resources
-
-        parsed = _parse_json(res.get("stdout", ""))
-        if not isinstance(parsed, list):
-            return resources
-
-        for vm in parsed:
-            if not isinstance(vm, dict):
-                continue
-            vm_id = vm.get("id", "") or vm.get("vmId", "") or vm.get("name", "")
-            name = vm.get("name", "") or vm_id
-            location = vm.get("location")
-            vm_size = (vm.get("hardwareProfile") or {}).get("vmSize") or vm.get("vmSize") or "unknown"
-            power_state = vm.get("powerState") or "unknown"
-            public_ips = vm.get("publicIps")
-
-            r = Resource(
-                id=vm_id or name,
-                name=name,
-                type="azure_vm",
-                provider="azure",
-                region=location,
-                creation_date=None,
-            )
-            setattr(r, "state", power_state)
-            setattr(r, "class_type", vm_size)
-            setattr(r, "external_ip", public_ips)
-            resources.append(r)
-
-        return resources
+        results = await asyncio.gather(*[c.collect() for c in collectors], return_exceptions=True)
+        
+        all_resources = []
+        for res in results:
+            if isinstance(res, list):
+                all_resources.extend(res)
+            else:
+                logger.error(f"[Azure] Collector failed: {res}")
+                
+        return all_resources
 
     def get_resource_metadata(self, resource_id: str) -> dict:
         return {"id": resource_id, "provider": "azure"}
+
+    async def get_utilization_metrics(self, resources: List[Resource], period_days: int = 7) -> List[Resource]:
+        from ..collectors.azure.metrics import AzureMetricsCollector
+        collector = AzureMetricsCollector(subscription_id=self.subscription_id)
+        return await collector.collect_metrics(resources, period_days)

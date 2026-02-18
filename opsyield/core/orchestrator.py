@@ -21,7 +21,18 @@ class Orchestrator:
         self.analytics = AnalyticsEngine()
         self.governance = PolicyEngine()
         self.risk = RiskEngine()
+        self.risk = RiskEngine()
         self.optimization = OptimizationEngine()
+        
+        from ..watchers.idle import IdleWatcher
+        from ..watchers.cost import CostSpikeWatcher
+        from ..watchers.security import SecurityWatcher
+        
+        self.watchers = [
+            IdleWatcher(),
+            CostSpikeWatcher(),
+            SecurityWatcher()
+        ]
 
     async def analyze(self, provider_name: str, days: int = 30, **kwargs) -> AnalysisResult:
         """
@@ -46,6 +57,12 @@ class Orchestrator:
         # 1. Fetch Data
         costs = await provider.get_costs(days=days)
         resources = await provider.get_infrastructure()
+        
+        # 1.5 Fetch Utilization Metrics
+        try:
+            resources = await provider.get_utilization_metrics(resources, period_days=7)
+        except Exception as e:
+            logger.warning(f"Failed to fetch metrics: {e}")
 
         # Optional: enrich resources with per-resource costs if provider supports it
         resource_cost_map: Dict[str, Dict[str, Any]] = {}
@@ -117,70 +134,33 @@ class Orchestrator:
         # Enrichment: resource type counts + running count + idle/waste heuristics
         resource_types: Dict[str, int] = defaultdict(int)
         running_count = 0
-        idle_scorer = IdleScorer()
-        waste_detector = WasteDetector()
-        idle_resources: List[Dict[str, Any]] = []
-
-        now = datetime.utcnow()
-
-        resource_dicts_for_waste: List[Dict[str, Any]] = []
+        
         for r in resources:
             resource_types[r.type] += 1
             state = (r.state or "").lower()
             if "running" in state:
                 running_count += 1
 
-            days_running = 0
-            if r.creation_date:
-                try:
-                    days_running = (now - r.creation_date.replace(tzinfo=None)).days
-                except Exception:
-                    days_running = 0
+        # 6. Run Watchers
+        watcher_findings = []
+        for w in self.watchers:
+             try:
+                 findings = w.watch(resources, costs)
+                 watcher_findings.extend(findings)
+             except Exception as e:
+                 logger.error(f"Watcher {type(w).__name__} failed: {e}")
+        
+        # Integrate Watcher findings into result
+        # We can put them in anomalies or executive summary
+        waste_findings = [f for f in watcher_findings if f["type"] == "idle_resource"]
+        security_findings = [f for f in watcher_findings if f["type"] == "security_risk"]
+        cost_findings = [f for f in watcher_findings if f["type"] == "cost_spike"]
+        
+        # Merge with analytics results for backward compatibility
+        all_anomalies = analytics_results.get("anomalies", []) + cost_findings
 
-            # basic idle heuristics:
-            # - no external IP (often internal-only workloads)
-            # - long running
-            # - very low 30d cost if available
-                idle_score = idle_scorer.calculate_score({
-                    "name": r.name,
-                    "state": r.state,
-                    "external_ip": r.external_ip,
-                    "days_running": days_running,
-                    "type": r.type,
-                    "cost_30d": r.cost_30d
-                }, cpu_avg=None)
-                
-                if r.cost_30d is not None:
-                     # Boost score if burning significant money for no reason
-                    if r.cost_30d > 50 and "dev" in (r.name or "").lower():
-                        idle_score += 20
+        # Logic for high cost resources...
 
-                r.idle_score = min(100, int(idle_score))
-
-                if r.idle_score >= 50: # Lowered threshold to see more candidates
-                    idle_resources.append({
-                        "id": r.id,
-                        "name": r.name,
-                        "type": r.type,
-                        "class_type": r.class_type,
-                        "region": r.region,
-                        "state": r.state,
-                        "idle_score": r.idle_score,
-                        "cost_30d": r.cost_30d,
-                        "currency": r.currency,
-                        "days_running": days_running,
-                    })
-
-            resource_dicts_for_waste.append({
-                "name": r.name,
-                "type": r.type,
-                "state": r.state, 
-                "external_ip": r.external_ip,
-                "created_at": r.creation_date,
-                "cost_30d": r.cost_30d 
-            })
-
-        waste_findings = waste_detector.detect(resource_dicts_for_waste) if resources else []
 
         # High-cost resources (if we have per-resource costs)
         high_cost_resources = []
@@ -271,6 +251,16 @@ class Orchestrator:
         agg_daily_trends = [{"date": d, "amount": v} for d, v in agg_daily_map.items()]
         agg_daily_trends.sort(key=lambda x: x["date"])
 
+        # Merged Results
+        # Integrate Intelligence Engines
+        from ..intelligence.engines import ComparisonEngine, ForecastEngine
+        
+        comparison_engine = ComparisonEngine()
+        forecast_engine = ForecastEngine()
+        
+        comparison = comparison_engine.compare_providers(valid_results)
+        forecast = forecast_engine.forecast_spend(agg_daily_trends, days_ahead=days)
+
         return AnalysisResult(
             meta={
                 "provider": "aggregate",
@@ -286,14 +276,18 @@ class Orchestrator:
             executive_summary={
                 "total_spend": total_cost,
                 "risk_score": avg_risk,
-                # Simple aggregation for other fields
+                "comparison": comparison,
                 "anomaly_count": len(all_anomalies),
                 "governance_violations": len(all_violations)
             },
-            trends={"period_total": total_cost, "trend_percent": 0.0}, # Dummy summary
+            trends={
+                "period_total": total_cost, 
+                "trend_percent": 0.0,
+                "forecast": forecast
+            }, 
             daily_trends=agg_daily_trends,
             anomalies=all_anomalies,
-            forecast={},
+            forecast=forecast,
             governance_issues=all_violations,
             optimizations=all_optimizations,
             resources=all_resources

@@ -21,7 +21,7 @@ def main():
 
     # Common Arguments Parser (Parent)
     common_parser = argparse.ArgumentParser(add_help=False)
-    common_parser.add_argument("--provider", type=str, required=True, choices=["gcp", "aws"], help="Cloud provider")
+    common_parser.add_argument("--provider", type=str, required=True, choices=["gcp", "aws", "azure"], help="Cloud provider")
     common_parser.add_argument("--project-id", type=str, help="GCP Project ID (required for GCP)")
     common_parser.add_argument("--days", type=int, default=30, help="Number of days to analyze")
     common_parser.add_argument("--policy", type=str, help="Path to policies.yaml", default=None)
@@ -30,6 +30,11 @@ def main():
     analyze_parser = subparsers.add_parser("analyze", parents=[common_parser], help="Analyze cloud costs and optimizations")
     analyze_parser.add_argument("--out", type=str, default="stdout", help="Output file path or 'stdout'")
     analyze_parser.add_argument("--format", type=str, default="json", choices=["json", "table"], help="Output format")
+
+    # Watch Command
+    watch_parser = subparsers.add_parser("watch", help="Start periodic monitoring")
+    watch_parser.add_argument("--providers", nargs="+", default=["aws", "gcp", "azure"], help="Providers to monitor")
+    watch_parser.add_argument("--interval", type=int, default=10, help="Interval in minutes")
 
     # Snapshot Command
     snapshot_parser = subparsers.add_parser("snapshot", help="Manage cost snapshots")
@@ -65,6 +70,8 @@ def main():
 
     if args.command == "analyze":
         asyncio.run(run_analyze(args))
+    elif args.command == "watch":
+        asyncio.run(run_watch(args))
     elif args.command == "snapshot":
         if args.snapshot_command == "save":
             asyncio.run(run_snapshot_save(args))
@@ -90,11 +97,16 @@ async def get_analysis_data(args) -> dict:
     result = await orchestrator.analyze(
         provider_name=args.provider, 
         days=args.days, 
-        project_id=args.project_id
+        project_id=getattr(args, 'project_id', None)
     )
     
     # Convert dataclass to dict for serialization/compatibility
     return asdict(result)
+
+async def run_watch(args):
+    from ..core.scheduler import Scheduler
+    scheduler = Scheduler(interval_minutes=args.interval, providers=args.providers)
+    await scheduler.start()
 
 async def run_analyze(args):
     data = await get_analysis_data(args)

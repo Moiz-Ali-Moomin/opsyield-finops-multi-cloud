@@ -184,150 +184,10 @@ class GCPProvider:
     # Cost Analysis via BigQuery Billing Export
     # ─────────────────────────────────────────────────
 
-    def _resolve_project_id(self) -> str:
-        """
-        Resolve the GCP project ID for BigQuery queries.
-
-        Priority: constructor arg → gcloud config get-value project
-        """
-        if self.project_id:
-            return self.project_id
-
-        result = _run("gcloud config get-value project", timeout=10)
-        if result["ok"] and result["stdout"].strip():
-            self.project_id = result["stdout"].strip()
-            return self.project_id
-
-        raise ValueError(
-            "No GCP project_id provided and 'gcloud config get-value project' "
-            "returned empty. Set a project with: gcloud config set project <PROJECT_ID>"
-        )
-
-    def _build_cost_query(self, project_id: str, days: int) -> str:
-        """
-        Build the BigQuery SQL for billing export aggregation.
-
-        Uses wildcard table pattern for standard billing export tables.
-        Groups by service + currency, aggregates SUM(cost), ordered by cost DESC.
-        """
-        start_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
-        table = f"`{project_id}.{self._BQ_DATASET}.{self._BQ_TABLE_PATTERN}`"
-
-        return f"""
-            SELECT
-                service.description    AS service_name,
-                currency               AS currency,
-                SUM(cost)              AS total_cost,
-                MIN(usage_start_time)  AS earliest_usage,
-                MAX(usage_start_time)  AS latest_usage,
-                COUNT(*)               AS line_items
-            FROM {table}
-            WHERE
-                DATE(usage_start_time) >= '{start_date}'
-                AND cost > 0
-            GROUP BY
-                service_name, currency
-            ORDER BY
-                total_cost DESC
-        """
-
-    def _get_costs_sync(self, days: int) -> List[NormalizedCost]:
-        """
-        Synchronous BigQuery cost retrieval — called via asyncio.to_thread().
-
-        Raises ValueError with actionable messages on setup issues.
-        Returns List[NormalizedCost] on success.
-        """
-        if not HAS_BIGQUERY:
-            raise ValueError(
-                "google-cloud-bigquery is not installed. "
-                "Run: pip install google-cloud-bigquery"
-            )
-
-        try:
-            project_id = self._resolve_project_id()
-        except ValueError:
-            raise
-
-        query = self._build_cost_query(project_id, days)
-        start_date = (datetime.utcnow() - timedelta(days=days)).strftime('%Y-%m-%d')
-        logger.info(
-            f"[GCP Costs] Querying BigQuery — "
-            f"project={project_id}, dataset={self._BQ_DATASET}, "
-            f"start_date={start_date}, days={days}"
-        )
-
-        t0 = time.monotonic()
-        try:
-            client = bigquery.Client(project=project_id)
-            query_job = client.query(query)
-            rows = list(query_job.result())  # blocks until complete
-            elapsed = time.monotonic() - t0
-
-            logger.info(
-                f"[GCP Costs] Query complete — "
-                f"{len(rows)} service groups in {elapsed:.2f}s"
-            )
-
-            costs: List[NormalizedCost] = []
-            now = datetime.utcnow()
-
-            for row in rows:
-                # BigQuery returns Decimal for SUM(cost) — convert to float safely
-                raw_cost = row.get("total_cost", 0)
-                cost_float = float(raw_cost) if isinstance(raw_cost, Decimal) else float(raw_cost or 0)
-
-                if cost_float <= 0:
-                    continue
-
-                costs.append(NormalizedCost(
-                    provider="gcp",
-                    service=row.get("service_name", "Unknown"),
-                    region="global",                    # billing export is region-agnostic at aggregate level
-                    resource_id="aggregated",           # aggregated across resources
-                    cost=round(cost_float, 4),
-                    currency=row.get("currency", "USD"),
-                    timestamp=now,
-                    tags={},
-                    environment="production",
-                ))
-
-            logger.info(
-                f"[GCP Costs] Returning {len(costs)} cost entries, "
-                f"total=${sum(c.cost for c in costs):,.2f}"
-            )
-            return costs
-
-        except Exception as e:
-            elapsed = time.monotonic() - t0
-            error_type = type(e).__name__
-            error_msg = str(e)
-
-            # ── Structured error handling with actionable messages ──
-            if gcp_exceptions and isinstance(e, gcp_exceptions.NotFound):
-                raise ValueError(
-                    f"Billing export not enabled. "
-                    f"Expected table: {project_id}.{self._BQ_DATASET}.{self._BQ_TABLE_PATTERN}\n"
-                    f"Please run: opsyield gcp setup\n"
-                    f"Or enable manually: GCP Console → Billing → Billing export → BigQuery export"
-                )
-            elif gcp_exceptions and isinstance(e, gcp_exceptions.Forbidden):
-                raise ValueError(
-                    f"Permission denied accessing billing data. "
-                    f"Required IAM roles: roles/bigquery.dataViewer, roles/bigquery.jobUser\n"
-                    f"Grant access: gcloud projects add-iam-policy-binding {project_id} "
-                    f"--member='user:<EMAIL>' --role='roles/bigquery.dataViewer'"
-                )
-            elif gcp_exceptions and isinstance(e, gcp_exceptions.BadRequest):
-                logger.error(
-                    f"[GCP Costs] Bad query ({elapsed:.2f}s): {error_msg}"
-                )
-                return []
-            else:
-                logger.error(
-                    f"[GCP Costs] {error_type} after {elapsed:.2f}s: {error_msg}"
-                )
-                return []
+    async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
+        from ..billing.gcp import GCPBillingProvider
+        billing = GCPBillingProvider(project_id=self.project_id)
+        return await billing.get_costs(days)
 
     async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
         """
@@ -415,90 +275,35 @@ class GCPProvider:
     # Infrastructure (stub)
     # ─────────────────────────────────────────────────
 
-    async def get_infrastructure(self) -> List:
-        import asyncio
-        return await asyncio.to_thread(self._sync_get_infrastructure)
-
-    def _sync_get_infrastructure(self) -> List[Resource]:
+    async def get_infrastructure(self) -> List[Resource]:
         """
-        Minimal GCP inventory: Compute Engine instances via Compute API.
-
-        Requires:
-          - google-cloud-compute installed
-          - credentials available via ADC (gcloud auth application-default login)
-          - compute API enabled (compute.googleapis.com) in the project
+        Discovers infrastructure using modular collectors.
         """
-        resources: List[Resource] = []
+        from ..collectors.gcp.compute import GCPComputeCollector
+        from ..collectors.gcp.storage import GCPStorageCollector
+        from ..collectors.gcp.sql import GCPSQLCollector
 
-        # Lazy import to avoid hard dependency
-        try:
-            from google.cloud import compute_v1
-        except Exception as e:
-            logger.warning(f"[GCP] google-cloud-compute not available: {e}")
-            return resources
+        collectors = [
+            GCPComputeCollector(project_id=self.project_id),
+            GCPStorageCollector(project_id=self.project_id),
+            GCPSQLCollector(project_id=self.project_id)
+        ]
 
-        try:
-            project_id = self._resolve_project_id()
-        except Exception as e:
-            logger.warning(f"[GCP] Could not resolve project id: {e}")
-            return resources
-
-        try:
-            client = compute_v1.InstancesClient()
-            req = compute_v1.AggregatedListInstancesRequest(project=project_id)
-
-            for zone, scoped_list in client.aggregated_list(request=req):
-                if not scoped_list or not scoped_list.instances:
-                    continue
-                # zone key format: "zones/us-central1-a"
-                zone_name = zone.split("/")[-1] if isinstance(zone, str) else None
-
-                for inst in scoped_list.instances:
-                    name = getattr(inst, "name", "") or ""
-                    instance_id = str(getattr(inst, "id", "") or name)
-                    status = getattr(inst, "status", None)
-                    machine_type_url = getattr(inst, "machine_type", "") or ""
-                    machine_type = machine_type_url.split("/")[-1] if machine_type_url else "unknown"
-                    creation_ts = getattr(inst, "creation_timestamp", None)
-
-                    external_ip: Optional[str] = None
-                    try:
-                        for ni in getattr(inst, "network_interfaces", []) or []:
-                            for ac in getattr(ni, "access_configs", []) or []:
-                                nat_ip = getattr(ac, "nat_i_p", None) or getattr(ac, "nat_ip", None)
-                                if nat_ip:
-                                    external_ip = nat_ip
-                                    break
-                            if external_ip:
-                                break
-                    except Exception:
-                        external_ip = None
-
-                    created_dt = None
-                    if creation_ts:
-                        try:
-                            # Example: "2026-02-16T19:20:37.172-07:00"
-                            created_dt = datetime.fromisoformat(str(creation_ts).replace("Z", "+00:00"))
-                        except Exception:
-                            created_dt = None
-
-                    r = Resource(
-                        id=instance_id,
-                        name=name or instance_id,
-                        type="compute_instance",
-                        provider="gcp",
-                        region=zone_name,
-                        creation_date=created_dt,
-                    )
-                    setattr(r, "state", status)
-                    setattr(r, "class_type", machine_type)
-                    setattr(r, "external_ip", external_ip)
-                    resources.append(r)
-
-        except Exception as e:
-            logger.error(f"[GCP] infrastructure fetch failed: {e}")
-
-        return resources
+        results = await asyncio.gather(*[c.collect() for c in collectors], return_exceptions=True)
+        
+        all_resources = []
+        for res in results:
+            if isinstance(res, list):
+                all_resources.extend(res)
+            else:
+                logger.error(f"[GCP] Collector failed: {res}")
+                
+        return all_resources
 
     def get_resource_metadata(self, resource_id: str) -> dict:
         return {"id": resource_id, "provider": "gcp"}
+
+    async def get_utilization_metrics(self, resources: List[Resource], period_days: int = 7) -> List[Resource]:
+        from ..collectors.gcp.metrics import GCPMetricsCollector
+        collector = GCPMetricsCollector(project_id=self.project_id)
+        return await collector.collect_metrics(resources, period_days)
