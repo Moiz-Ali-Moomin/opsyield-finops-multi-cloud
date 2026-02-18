@@ -1,7 +1,7 @@
 {
-    "name": "web-ui",
-    "private": true,
-    "version": "0.0.0",
+    "name": "opsyield-web-ui",
+    "private": false,
+    "version": "1.0.0",
     "type": "module",
     "scripts": {
         "dev": "vite",
@@ -49,5 +49,26 @@
         "typescript": "~5.9.3",
         "typescript-eslint": "^8.48.0",
         "vite": "^7.3.1"
-    }
+    },
+    "description": "This is Frontend part for My OpsYield Application and For Backend Application use (pip install opsyield) written in python",
+    "main": "eslint.config.js",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Moiz-Ali-Moomin/opsyield-finops-multi-cloud.git"
+    },
+    "keywords": [
+        "finops",
+        "devops",
+        "cloud",
+        "aws",
+        "azure",
+        "gcp",
+        "monitoring"
+    ],
+    "author": "Moiz Ali Moomin",
+    "license": "MIT",
+    "bugs": {
+        "url": "https://github.com/Moiz-Ali-Moomin/opsyield-finops-multi-cloud/issues"
+    },
+    "homepage": "https://github.com/Moiz-Ali-Moomin/opsyield-finops-multi-cloud#readme"
 }
