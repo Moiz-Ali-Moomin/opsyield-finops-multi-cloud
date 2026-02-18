@@ -80,6 +80,44 @@ async def analyze_cost(
         logger.error(f"Analysis failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# ─── SPA Serving ──────────────────────────────────────────────────────────────
+# Serve the React frontend if built and available in ../web/static
+
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# Determine path to static files (relative to this file)
+# opsyield/api/main.py -> opsyield/web/static
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATIC_DIR = os.path.join(BASE_DIR, "web", "static")
+
+if os.path.exists(STATIC_DIR):
+    logger.info(f"Serving static files from {STATIC_DIR}")
+    
+    # Mount assets (JS/CSS)
+    # Vite puts assets in /assets, so we mount it there.
+    if os.path.exists(os.path.join(STATIC_DIR, "assets")):
+        app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+
+    # Catch-all for SPA
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Allow API calls to pass through (though they should match above routes first)
+        if full_path.startswith("api") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+             raise HTTPException(status_code=404, detail="Not Found")
+
+        # Check if a specific file exists in static dir (e.g. favicon.ico, robots.txt)
+        file_path = os.path.join(STATIC_DIR, full_path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+
+        # Fallback to index.html for client-side routing
+        index_path = os.path.join(STATIC_DIR, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+            
+        return {"message": "Frontend not found (index.html missing)"}

@@ -44,6 +44,7 @@ yarn-error.log
 # Web UI
 web-ui/dist/
 web-ui/coverage/
+opsyield/web/static/
 
 # OS
 .DS_Store
