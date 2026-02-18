@@ -30,7 +30,38 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
         sections: [
 
             {
-                title: '1. Enable BigQuery Billing Export (MANDATORY)',
+                title: '1. Authentication',
+                items: [
+                    { code: 'gcloud auth login' },
+                    { code: 'gcloud auth list' },
+                    {
+                        note: 'Ensure the ACTIVE account has Billing Account permissions.'
+                    }
+                ]
+            },
+
+            {
+                title: '2. Get Billing Account ID',
+                items: [
+                    {
+                        code: 'gcloud beta billing accounts list'
+                    },
+                    {
+                        note: 'Copy the "ACCOUNT_ID" (e.g., 012345-6789AB-CDEF01) for the next steps.'
+                    }
+                ]
+            },
+
+            {
+                title: '3. Select Project',
+                items: [
+                    { code: 'gcloud config set project YOUR_PROJECT_ID' },
+                    { code: 'gcloud config get-value project' }
+                ]
+            },
+
+            {
+                title: '4. Enable BigQuery Billing Export (MANDATORY)',
                 items: [
                     {
                         text: 'Billing Export MUST be enabled before cost data can be queried. You can use automated setup or manual Console setup.'
@@ -58,26 +89,7 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
             },
 
             {
-                title: '2. Authentication',
-                items: [
-                    { code: 'gcloud auth login' },
-                    { code: 'gcloud auth list' },
-                    {
-                        note: 'Ensure the ACTIVE account has Billing Account permissions.'
-                    }
-                ]
-            },
-
-            {
-                title: '3. Select Project',
-                items: [
-                    { code: 'gcloud config set project YOUR_PROJECT_ID' },
-                    { code: 'gcloud config get-value project' }
-                ]
-            },
-
-            {
-                title: '4. Verify Billing Link',
+                title: '5. Verify Billing Link',
                 items: [
                     {
                         code: 'gcloud beta billing projects describe YOUR_PROJECT_ID'
@@ -89,7 +101,7 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
             },
 
             {
-                title: '5. Enable Required APIs',
+                title: '6. Enable Required APIs',
                 items: [
                     {
                         code: 'gcloud services enable bigquery.googleapis.com cloudbilling.googleapis.com --project=YOUR_PROJECT_ID'
@@ -101,7 +113,7 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
             },
 
             {
-                title: '6. Required IAM Roles',
+                title: '7. Required IAM Roles',
                 items: [
                     {
                         label: 'Billing Account Scope',
@@ -115,7 +127,7 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
             },
 
             {
-                title: '7. Application Default Credentials (ADC)',
+                title: '8. Application Default Credentials (ADC)',
                 items: [
                     { code: 'gcloud auth application-default login' },
                     {
@@ -125,7 +137,7 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
             },
 
             {
-                title: '8. Verification',
+                title: '9. Verification',
                 items: [
                     { code: 'bq ls YOUR_PROJECT_ID' },
                     { code: 'bq ls YOUR_PROJECT_ID:billing_export' },

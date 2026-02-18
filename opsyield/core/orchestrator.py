@@ -141,34 +141,43 @@ class Orchestrator:
             # - no external IP (often internal-only workloads)
             # - long running
             # - very low 30d cost if available
-            resource_like = {
-                "external_ip": r.external_ip,
-                "days_running": days_running,
-            }
-            idle_score = idle_scorer.calculate_score(resource_like, cpu_avg=None)
-            if r.cost_30d is not None and r.cost_30d < 1 and "running" in state:
-                idle_score += 40
-            r.idle_score = min(100, int(idle_score))
-
-            if r.idle_score >= 70:
-                idle_resources.append({
-                    "id": r.id,
+                idle_score = idle_scorer.calculate_score({
                     "name": r.name,
-                    "type": r.type,
-                    "class_type": r.class_type,
-                    "region": r.region,
                     "state": r.state,
-                    "idle_score": r.idle_score,
-                    "cost_30d": r.cost_30d,
-                    "currency": r.currency,
+                    "external_ip": r.external_ip,
                     "days_running": days_running,
-                })
+                    "type": r.type,
+                    "cost_30d": r.cost_30d
+                }, cpu_avg=None)
+                
+                if r.cost_30d is not None:
+                     # Boost score if burning significant money for no reason
+                    if r.cost_30d > 50 and "dev" in (r.name or "").lower():
+                        idle_score += 20
+
+                r.idle_score = min(100, int(idle_score))
+
+                if r.idle_score >= 50: # Lowered threshold to see more candidates
+                    idle_resources.append({
+                        "id": r.id,
+                        "name": r.name,
+                        "type": r.type,
+                        "class_type": r.class_type,
+                        "region": r.region,
+                        "state": r.state,
+                        "idle_score": r.idle_score,
+                        "cost_30d": r.cost_30d,
+                        "currency": r.currency,
+                        "days_running": days_running,
+                    })
 
             resource_dicts_for_waste.append({
                 "name": r.name,
                 "type": r.type,
+                "state": r.state, 
                 "external_ip": r.external_ip,
                 "created_at": r.creation_date,
+                "cost_30d": r.cost_30d 
             })
 
         waste_findings = waste_detector.detect(resource_dicts_for_waste) if resources else []

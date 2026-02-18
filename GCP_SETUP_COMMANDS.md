@@ -16,25 +16,31 @@ gcloud auth login
 ```
 This will open a browser window for you to sign in with your Google account.
 
-### 2. Set Your GCP Project
+### 2. Get Your Billing Account ID
+```powershell
+gcloud beta billing accounts list
+```
+Copy the `ACCOUNT_ID` (format `XXXXXX-XXXXXX-XXXXXX`) for use in later steps.
+
+### 3. Set Your GCP Project
 ```powershell
 gcloud config set project YOUR_PROJECT_ID
 ```
 Replace `YOUR_PROJECT_ID` with your actual GCP project ID.
 
-### 3. Enable Required APIs
+### 4. Enable Required APIs
 ```powershell
 gcloud services enable bigquery.googleapis.com --project=YOUR_PROJECT_ID
 gcloud services enable cloudbilling.googleapis.com --project=YOUR_PROJECT_ID
 ```
 
-### 4. Set Up Application Default Credentials
+### 5. Set Up Application Default Credentials
 ```powershell
 gcloud auth application-default login
 ```
 This allows Python libraries to authenticate automatically.
 
-### 5. Run OpsYield Automated Setup
+### 6. Run OpsYield Automated Setup
 ```powershell
 opsyield gcp setup --project-id YOUR_PROJECT_ID --billing-account YOUR_BILLING_ACCOUNT_ID
 ```
@@ -47,12 +53,12 @@ Or without billing account (will verify existing setup):
 opsyield gcp setup --project-id YOUR_PROJECT_ID
 ```
 
-### 6. Verify BigQuery Dataset
+### 7. Verify BigQuery Dataset
 ```powershell
 bq ls YOUR_PROJECT_ID:billing_export
 ```
 
-### 7. Verify Cost Data (Optional)
+### 8. Verify Cost Data (Optional)
 ```powershell
 bq query --use_legacy_sql=false "SELECT SUM(cost) as total_cost FROM `YOUR_PROJECT_ID.billing_export.gcp_billing_export_v1_*` WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)"
 ```

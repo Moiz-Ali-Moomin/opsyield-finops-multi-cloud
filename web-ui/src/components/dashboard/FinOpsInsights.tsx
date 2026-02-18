@@ -1,7 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useOpsStore } from "@/store/useOpsStore";
 import { formatCurrency, formatNumber } from "@/lib/format";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+    DialogDescription
+} from "@/components/ui/dialog";
+import { ResourceTable, Resource } from "./ResourceTable";
+import { Table as TableIcon } from "lucide-react";
 
 type HighCostResource = {
     id: string;
@@ -81,6 +92,7 @@ export function FinOpsInsights() {
     const highCost = asHighCostResources((data.high_cost_resources || []) as unknown[]);
     const idle = asIdleResources((data.idle_resources || []) as unknown[]);
     const waste = asWasteFindings((data.waste_findings || []) as unknown[]);
+    const allResources = (data.resources || []) as unknown as Resource[];
 
     const topTypes = sortEntriesDesc(resourceTypes).slice(0, 8);
     const topDrivers = costDrivers.slice(0, 8);
@@ -90,7 +102,7 @@ export function FinOpsInsights() {
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card>
+            <Card className="flex flex-col">
                 <CardHeader className="pb-3">
                     <CardTitle className="flex items-center justify-between">
                         <span>Resource Inventory</span>
@@ -99,7 +111,7 @@ export function FinOpsInsights() {
                         </Badge>
                     </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-3 flex-1">
                     <div className="text-sm text-muted-foreground">
                         Total discovered resources:{" "}
                         <span className="font-semibold text-foreground">
@@ -125,6 +137,27 @@ export function FinOpsInsights() {
                         </div>
                     )}
                 </CardContent>
+                <div className="p-4 pt-0 mt-auto">
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <Button variant="outline" className="w-full">
+                                <TableIcon className="w-4 h-4 mr-2" />
+                                View All Resources
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+                            <DialogHeader>
+                                <DialogTitle>Resource Inventory</DialogTitle>
+                                <DialogDescription>
+                                    List of all discovered resources, their costs, and status.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="flex-1 overflow-auto min-h-0">
+                                <ResourceTable resources={allResources} />
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </Card>
 
             <Card>
