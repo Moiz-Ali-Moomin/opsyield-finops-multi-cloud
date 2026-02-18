@@ -64,12 +64,12 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
                 title: '4. Enable BigQuery Billing Export (MANDATORY)',
                 items: [
                     {
-                        text: 'Billing Export MUST be enabled before cost data can be queried. You can use automated setup or manual Console setup.'
+                        text: 'Billing Export MUST be enabled before cost data can be queried.'
                     },
                     {
                         label: 'Option A: Automated Setup (Recommended)',
                         code: 'opsyield gcp setup --project-id YOUR_PROJECT_ID --billing-account BILLING_ACCOUNT_ID',
-                        note: 'This command will create the BigQuery dataset and verify billing configuration. You may still need to enable export in Console if not already done.'
+                        note: 'Creates dataset and verifies configuration.'
                     },
                     {
                         label: 'Option B: Manual Console Setup',
@@ -83,7 +83,7 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
                         ]
                     },
                     {
-                        note: 'Historical data is NOT backfilled. First data may take 4–24 hours to appear after enabling export.'
+                        note: 'Historical data is NOT backfilled. Data appears in 4–24 hours.'
                     }
                 ]
             },
@@ -95,7 +95,23 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
                         code: 'gcloud beta billing projects describe YOUR_PROJECT_ID'
                     },
                     {
-                        note: 'Output must show "billingEnabled": true and a valid "billingAccountName".'
+                        note: 'Must show billingEnabled: true'
+                    }
+                ]
+            },
+
+            {
+                title: '5.1 Link Billing Account (If billingEnabled is false)',
+                items: [
+                    {
+                        code: `gcloud beta billing projects link YOUR_PROJECT_ID \\
+  --billing-account BILLING_ACCOUNT_ID`
+                    },
+                    {
+                        code: 'gcloud beta billing projects describe YOUR_PROJECT_ID'
+                    },
+                    {
+                        note: 'Billing MUST be linked or export will not work.'
                     }
                 ]
             },
@@ -116,12 +132,17 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
                 title: '7. Required IAM Roles',
                 items: [
                     {
-                        label: 'Billing Account Scope',
-                        list: ['roles/billing.admin']
+                        label: 'Billing Account',
+                        list: [
+                            'roles/billing.admin OR roles/billing.viewer'
+                        ]
                     },
                     {
-                        label: 'Project Scope',
-                        list: ['roles/bigquery.dataViewer', 'roles/bigquery.jobUser']
+                        label: 'Project',
+                        list: [
+                            'roles/bigquery.dataViewer',
+                            'roles/bigquery.jobUser'
+                        ]
                     }
                 ]
             },
@@ -131,7 +152,7 @@ export const CLOUD_INSTRUCTIONS: Record<'gcp' | 'aws' | 'azure', CloudInstructio
                 items: [
                     { code: 'gcloud auth application-default login' },
                     {
-                        note: 'For CI/CD, use a Service Account and set GOOGLE_APPLICATION_CREDENTIALS.'
+                        note: 'Required for OpsYield CLI and automation.'
                     }
                 ]
             },
@@ -149,7 +170,7 @@ WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
 "`
                     },
                     {
-                        note: 'If this returns a numeric value (including 0.0), configuration is correct.'
+                        note: 'Numeric result confirms OpsYield readiness.'
                     }
                 ]
             }
@@ -163,22 +184,22 @@ WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
     aws: {
         title: 'Amazon Web Services (AWS)',
         overview:
-            'AWS cost data is retrieved using the Cost Explorer API. Cost Explorer must be enabled in the AWS Console before API access works. For Organizations, this must be done in the Management Account.',
+            'OpsYield retrieves cost data using the AWS Cost Explorer API. Cost Explorer must be enabled and IAM permissions configured.',
 
         sections: [
 
             {
-                title: '1. Enable Cost Explorer (Console Required)',
+                title: '1. Enable Cost Explorer',
                 items: [
                     {
                         list: [
-                            'Login to AWS Console (Management Account if using Organizations).',
-                            'Go to AWS Cost Management > Cost Explorer.',
-                            'Click "Enable Cost Explorer".'
+                            'Login to AWS Console',
+                            'Go to Cost Management > Cost Explorer',
+                            'Click Enable'
                         ]
                     },
                     {
-                        note: 'Activation can take up to 24 hours.'
+                        note: 'Activation takes up to 24 hours.'
                     }
                 ]
             },
@@ -188,15 +209,15 @@ WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
                 items: [
                     {
                         list: [
-                            'Go to Account Settings.',
-                            'Enable "IAM User and Role Access to Billing Information".'
+                            'Go to Account Settings',
+                            'Enable IAM Billing Access'
                         ]
                     }
                 ]
             },
 
             {
-                title: '3. Required IAM Permissions',
+                title: '3. Create IAM Policy',
                 items: [
                     {
                         code: `{
@@ -206,8 +227,8 @@ WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
       "Effect": "Allow",
       "Action": [
         "ce:GetCostAndUsage",
-        "ce:GetDimensionValues",
-        "ce:GetCostForecast"
+        "ce:GetCostForecast",
+        "ce:GetDimensionValues"
       ],
       "Resource": "*"
     }
@@ -218,25 +239,36 @@ WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
             },
 
             {
-                title: '4. CLI Setup',
+                title: '4. Configure CLI',
                 items: [
                     { code: 'aws configure' },
-                    { code: 'aws sts get-caller-identity' },
-                    { code: 'aws configure set region us-east-1' }
+                    { code: 'aws sts get-caller-identity' }
                 ]
             },
 
             {
-                title: '5. Verification',
+                title: '5. Set Default Region',
+                items: [
+                    {
+                        code: 'aws configure set region us-east-1'
+                    },
+                    {
+                        note: 'Cost Explorer works globally but requires a region set.'
+                    }
+                ]
+            },
+
+            {
+                title: '6. Verification',
                 items: [
                     {
                         code: `aws ce get-cost-and-usage \\
-  --time-period Start=YYYY-MM-DD,End=YYYY-MM-DD \\
-  --granularity=MONTHLY \\
-  --metrics UnblendedCost`
+--time-period Start=2024-01-01,End=2024-02-01 \\
+--granularity=MONTHLY \\
+--metrics UnblendedCost`
                     },
                     {
-                        note: 'Use a valid past date range. OpsYield uses UnblendedCost metric for consistency.'
+                        note: 'Successful output confirms OpsYield readiness.'
                     }
                 ]
             }
@@ -250,43 +282,20 @@ WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
     azure: {
         title: 'Microsoft Azure',
         overview:
-            'Azure cost data is retrieved via the Cost Management API. No export is required. RBAC must be assigned at Subscription scope.',
+            'OpsYield retrieves cost data using Azure Cost Management API. Subscription RBAC access is required.',
 
         sections: [
 
             {
-                title: '1. Verify Subscription',
+                title: '1. Login',
                 items: [
-                    {
-                        list: [
-                            'Go to Azure Portal > Cost Management + Billing.',
-                            'Ensure Subscription is active.',
-                            'Ensure Subscription is linked to a Billing Account.'
-                        ]
-                    }
+                    { code: 'az login' }
                 ]
             },
 
             {
-                title: '2. Required RBAC Role',
+                title: '2. Select Subscription',
                 items: [
-                    {
-                        list: [
-                            'Cost Management Reader (Recommended)',
-                            'Reader',
-                            'Contributor'
-                        ]
-                    },
-                    {
-                        note: 'Role MUST be assigned at Subscription scope.'
-                    }
-                ]
-            },
-
-            {
-                title: '3. CLI Setup',
-                items: [
-                    { code: 'az login' },
                     { code: 'az account list --output table' },
                     { code: 'az account set --subscription YOUR_SUBSCRIPTION_ID' },
                     { code: 'az account show --output table' }
@@ -294,28 +303,33 @@ WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
             },
 
             {
-                title: '4. Assign Role',
+                title: '3. Assign Required Role',
                 items: [
-                    { code: 'az ad signed-in-user show --query id -o tsv' },
+                    {
+                        code: 'az ad signed-in-user show --query id -o tsv'
+                    },
                     {
                         code: `az role assignment create \\
-  --assignee YOUR_USER_ID \\
-  --role "Cost Management Reader" \\
-  --scope "/subscriptions/YOUR_SUBSCRIPTION_ID"`
+--assignee YOUR_USER_ID \\
+--role "Cost Management Reader" \\
+--scope "/subscriptions/YOUR_SUBSCRIPTION_ID"`
+                    },
+                    {
+                        note: 'Role MUST be at Subscription scope.'
                     }
                 ]
             },
 
             {
-                title: '5. Verification',
+                title: '4. Verify Billing Access',
                 items: [
                     {
                         code: `az rest --method post \\
-  --uri "https://management.azure.com/subscriptions/YOUR_SUBSCRIPTION_ID/providers/Microsoft.CostManagement/query?api-version=2023-03-01" \\
-  --body "{\\"type\\":\\"ActualCost\\",\\"timeframe\\":\\"MonthToDate\\",\\"dataset\\":{\\"granularity\\":\\"Daily\\"}}"`
+--uri "https://management.azure.com/subscriptions/YOUR_SUBSCRIPTION_ID/providers/Microsoft.CostManagement/query?api-version=2023-03-01" \\
+--body "{\\"type\\":\\"ActualCost\\",\\"timeframe\\":\\"MonthToDate\\",\\"dataset\\":{\\"granularity\\":\\"Daily\\"}}"`
                     },
                     {
-                        note: 'Successful response contains properties.rows with numeric cost values.'
+                        note: 'Successful response confirms OpsYield readiness.'
                     }
                 ]
             }
