@@ -156,11 +156,37 @@ class Orchestrator:
         security_findings = [f for f in watcher_findings if f["type"] == "security_risk"]
         cost_findings = [f for f in watcher_findings if f["type"] == "cost_spike"]
         
+        # Backward compatibility for idle_resources list in AnalysisResult
+        idle_resources = []
+        for f in waste_findings:
+             idle_resources.append({
+                 "id": f.get("resource_id", "unknown"),
+                 "name": f.get("name", "unknown"),
+                 "type": "unknown", # Watcher might not preserve all details in finding, need to lookup?
+                 # Actually, let's just pass what we have. The UI likely expects specific fields.
+                 # Watcher findings: resource_id, name, score, reasons, cost_30d
+                 "idle_score": f.get("score"),
+                 "cost_30d": f.get("cost_30d"),
+                 "reasons": f.get("reasons"),
+                 "currency": "USD" # Default
+             })
+             # To get more details (type, region), we could look up in `resources` list
+             # but this is O(N*M). For now, let's keep it simple or do a lookup map.
+        
+        # Optimization: Build resource map for fast lookup
+        r_map = {r.id: r for r in resources}
+        for ir in idle_resources:
+            r = r_map.get(ir["id"])
+            if r:
+                ir["type"] = r.type
+                ir["region"] = r.region
+                ir["state"] = r.state
+                ir["currency"] = r.currency
+
         # Merge with analytics results for backward compatibility
         all_anomalies = analytics_results.get("anomalies", []) + cost_findings
 
         # Logic for high cost resources...
-
 
         # High-cost resources (if we have per-resource costs)
         high_cost_resources = []

@@ -76,7 +76,14 @@ class GCPMetricsCollector(GCPBaseCollector):
                             r.cpu_avg = round(val * 100, 2) # GCP returns 0-1
                             break
 
+
         except Exception as e:
             logger.error(f"GCP Monitoring failed: {e}")
 
         return resources
+
+    async def collect(self) -> List[Resource]:
+        return []
+
+    async def health_check(self) -> bool:
+        return True

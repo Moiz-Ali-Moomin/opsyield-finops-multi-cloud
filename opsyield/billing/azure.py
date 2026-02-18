@@ -4,13 +4,15 @@ import logging
 import asyncio
 from .base import BillingProvider
 from ..core.models import NormalizedCost
-from ..collectors.azure.base import AzureBaseCollector
+from azure.identity import DefaultAzureCredential
+import os
 
 logger = logging.getLogger("opsyield-billing-azure")
 
 class AzureBillingProvider(BillingProvider):
     def __init__(self, subscription_id: str = None):
-        self.collector = AzureBaseCollector(subscription_id=subscription_id)
+        self.credential = DefaultAzureCredential()
+        self.subscription_id = subscription_id or os.environ.get("AZURE_SUBSCRIPTION_ID")
 
     async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
         return await asyncio.to_thread(self._get_costs_sync, days)
@@ -22,9 +24,11 @@ class AzureBillingProvider(BillingProvider):
             from azure.mgmt.costmanagement import CostManagementClient
             from azure.mgmt.costmanagement.models import QueryDefinition, QueryTimePeriod, QueryDataset, QueryAggregation, QueryGrouping
 
-            sub_id = self.collector._get_subscription_id()
-            client = CostManagementClient(self.collector.credential)
-            scope = f"/subscriptions/{sub_id}"
+            if not self.subscription_id:
+                raise ValueError("AZURE_SUBSCRIPTION_ID is not set")
+
+            client = CostManagementClient(self.credential)
+            scope = f"/subscriptions/{self.subscription_id}"
             
             end = datetime.now()
             start = end - timedelta(days=days)

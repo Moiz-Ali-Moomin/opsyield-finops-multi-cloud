@@ -15,3 +15,9 @@ class AzureMetricsCollector(AzureBaseCollector):
         # Batching is limited. 
         # For now, we skip or just implement a placeholder logic.
         return resources
+
+    async def collect(self) -> List[Resource]:
+        return []
+
+    async def health_check(self) -> bool:
+        return True

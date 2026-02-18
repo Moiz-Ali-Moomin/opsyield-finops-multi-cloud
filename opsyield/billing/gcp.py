@@ -6,7 +6,7 @@ from decimal import Decimal
 import asyncio
 from .base import BillingProvider
 from ..core.models import NormalizedCost
-from ..collectors.gcp.base import GCPBaseCollector
+import os
 
 logger = logging.getLogger("opsyield-billing-gcp")
 
@@ -16,8 +16,7 @@ class GCPBillingProvider(BillingProvider):
     _BQ_TABLE_PATTERN = "gcp_billing_export_v1_*"
 
     def __init__(self, project_id: str = None):
-        self.collector_base = GCPBaseCollector(project_id=project_id)
-        self.project_id = self.collector_base.project_id
+        self.project_id = project_id or os.environ.get("GOOGLE_CLOUD_PROJECT")
 
     async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
         return await asyncio.to_thread(self._get_costs_sync, days)

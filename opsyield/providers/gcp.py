@@ -189,19 +189,7 @@ class GCPProvider:
         billing = GCPBillingProvider(project_id=self.project_id)
         return await billing.get_costs(days)
 
-    async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
-        """
-        Retrieve GCP costs from BigQuery billing export.
 
-        Runs the blocking BigQuery query in a thread pool via asyncio.to_thread()
-        to avoid blocking the event loop.
-
-        Prerequisites:
-          - Billing export to BigQuery enabled in GCP Console
-          - pip install google-cloud-bigquery
-          - IAM: BigQuery Data Viewer + BigQuery Job User
-        """
-        return await asyncio.to_thread(self._get_costs_sync, days)
 
     # ─────────────────────────────────────────────────
     # Resource-level costs (best-effort)
