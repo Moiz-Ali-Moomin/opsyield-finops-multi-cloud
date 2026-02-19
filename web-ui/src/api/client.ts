@@ -1,7 +1,17 @@
-
 import axios, { AxiosResponse, AxiosError } from 'axios';
 
-// Types derived from backend models
+// =====================================================
+// API BASE URL
+// =====================================================
+// Uses environment variable if available, otherwise defaults to local backend
+
+const API_BASE =
+    import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// =====================================================
+// TYPES FROM BACKEND MODELS
+// =====================================================
+
 export interface CloudStatus {
     gcp: {
         installed: boolean;
@@ -60,7 +70,7 @@ export interface AnalysisResult {
     forecast: unknown[];
     governance_issues: unknown[];
     resources: Resource[];
-    // Optional enrichment fields from backend
+
     cost_drivers?: { service: string; cost: number; currency?: string }[];
     resource_types?: Record<string, number>;
     running_count?: number;
@@ -69,19 +79,56 @@ export interface AnalysisResult {
     waste_findings?: unknown[];
 }
 
+// =====================================================
+// AXIOS INSTANCE
+// =====================================================
+
 export const api = axios.create({
-    baseURL: '/api',
-    timeout: 90000, // 90s timeout for real CLI calls (gcloud/aws/az)
+    baseURL: API_BASE,
+    timeout: 90000,
     headers: {
         'Content-Type': 'application/json',
     },
 });
 
-// Response interceptor for consistent error handling
+// =====================================================
+// REQUEST INTERCEPTOR
+// =====================================================
+
+api.interceptors.request.use(
+    (config) => {
+        console.log(
+            `API Request → ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`
+        );
+        return config;
+    },
+    (error) => {
+        console.error('Request Error:', error.message);
+        return Promise.reject(error);
+    }
+);
+
+// =====================================================
+// RESPONSE INTERCEPTOR
+// =====================================================
+
 api.interceptors.response.use(
     (response: AxiosResponse) => response,
     (error: AxiosError) => {
-        console.error('API Error:', error.response || error.message);
+
+        if (error.response) {
+            console.error(
+                `API Error ${error.response.status}:`,
+                error.response.data
+            );
+        } else if (error.request) {
+            console.error(
+                'Backend not reachable. Is opsyield backend running on port 8000?'
+            );
+        } else {
+            console.error('Axios Error:', error.message);
+        }
+
         return Promise.reject(error);
     }
 );

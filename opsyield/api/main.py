@@ -1,7 +1,11 @@
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from datetime import datetime
 import logging
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from ..core.orchestrator import Orchestrator
 from ..providers.factory import ProviderFactory
@@ -11,20 +15,27 @@ from .adapters.analysis_adapter import adapt_analysis_result
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("opsyield-api")
 
-app = FastAPI(title="OpsYield API", version="0.1.0")
+app = FastAPI(title="OpsYield API", version="0.1.1")
 
-@app.get("/health")
+# ─── CORS Configuration ───────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all for CLI/local usage safety
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ─── API Routes ───────────────────────────────────────────────────────────────
+
+@app.get("/api/health")
 def health_check():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.1.1"}
 
-@app.get("/cloud/status")
+@app.get("/api/cloud/status")
 async def get_cloud_status():
     """
     Production-grade cloud status endpoint.
-
-    Returns structured per-provider status with debug info.
-    Runs all provider checks concurrently via asyncio.gather().
-    Cached for 60s to prevent repeated CLI calls.
     """
     try:
         return await ProviderFactory.get_all_statuses()
@@ -32,41 +43,31 @@ async def get_cloud_status():
         logger.error(f"Failed to fetch cloud status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/aggregate")
+@app.get("/api/aggregate")
 async def aggregate(
     providers: str = Query(..., description="Comma-separated list of providers"), 
     days: int = 30,
     subscription_id: Optional[str] = None
 ):
-    """
-    Aggregate analysis across multiple providers.
-    """
-
     try:
         provider_list = [p.strip() for p in providers.split(',')]
         logger.info(f"Aggregating providers: {provider_list}")
         orchestrator = Orchestrator()
         result = await orchestrator.aggregate_analysis(provider_list, days=days, subscription_id=subscription_id)
-        logger.info(f"Orchestrator returned result type: {type(result)}")
         return adapt_analysis_result(result)
     except Exception as e:
         logger.error(f"Aggregation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/analyze")
+@app.get("/api/analyze")
 async def analyze_cost(
     provider: str, 
     days: int = 30, 
     project_id: Optional[str] = None,
     subscription_id: Optional[str] = None
 ):
-    """
-    Analyze cost for a specific provider.
-    Changed from POST to GET to match frontend contract.
-    """
     try:
         orchestrator = Orchestrator()
-        # Pass parameters to orchestrator
         result = await orchestrator.analyze(
             provider_name=provider,
             days=days,
@@ -80,43 +81,45 @@ async def analyze_cost(
         logger.error(f"Analysis failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
 # ─── SPA Serving ──────────────────────────────────────────────────────────────
-# Serve the React frontend if built and available in ../web/static
+# Serve the React frontend if built and available in ../web/static or ./dist
 
-import os
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+# Determine path to static files
+# Priority 1: dist folder in current working directory (npx opsyield behavior)
+# Priority 2: ../web/static relative to this file (legacy)
 
-# Determine path to static files (relative to this file)
-# opsyield/api/main.py -> opsyield/web/static
+CWD_DIST = os.path.join(os.getcwd(), "dist")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "web", "static")
 
-if os.path.exists(STATIC_DIR):
-    logger.info(f"Serving static files from {STATIC_DIR}")
+SERVE_DIR = None
+if os.path.exists(CWD_DIST):
+    SERVE_DIR = CWD_DIST
+elif os.path.exists(STATIC_DIR):
+    SERVE_DIR = STATIC_DIR
+
+if SERVE_DIR:
+    logger.info(f"Serving static files from {SERVE_DIR}")
     
-    # Mount assets (JS/CSS)
-    # Vite puts assets in /assets, so we mount it there.
-    if os.path.exists(os.path.join(STATIC_DIR, "assets")):
-        app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+    # Mount assets if they exist
+    if os.path.exists(os.path.join(SERVE_DIR, "assets")):
+        app.mount("/assets", StaticFiles(directory=os.path.join(SERVE_DIR, "assets")), name="assets")
 
     # Catch-all for SPA
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        # Allow API calls to pass through (though they should match above routes first)
+        # Allow API calls to pass through (though they should match above routes 
+        # first due to order definition)
         if full_path.startswith("api") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
              raise HTTPException(status_code=404, detail="Not Found")
 
-        # Check if a specific file exists in static dir (e.g. favicon.ico, robots.txt)
-        file_path = os.path.join(STATIC_DIR, full_path)
+        # Check if file exists
+        file_path = os.path.join(SERVE_DIR, full_path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)
 
-        # Fallback to index.html for client-side routing
-        index_path = os.path.join(STATIC_DIR, "index.html")
+        # Fallback to index.html
+        index_path = os.path.join(SERVE_DIR, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path)
             

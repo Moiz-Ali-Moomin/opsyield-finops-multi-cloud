@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="opsyield",
-    version="0.1.0",
+    version="0.1.1",
     description="OpsYield - Multi-cloud cost optimization, analytics, and governance platform for AWS, Azure, and GCP",
     author="Moiz Ali Moomin",
     author_email="moizalimoomin.53@gmail.com",
