@@ -15,7 +15,15 @@ from .adapters.analysis_adapter import adapt_analysis_result
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("opsyield-api")
 
+from .auth import router as auth_router
+from .cloud_accounts import router as cloud_router
+from .cost import router as cost_router
+
 app = FastAPI(title="OpsYield API", version="0.1.1")
+
+app.include_router(auth_router)
+app.include_router(cloud_router)
+app.include_router(cost_router)
 
 # ─── CORS Configuration ───────────────────────────────────────────────────────
 app.add_middleware(

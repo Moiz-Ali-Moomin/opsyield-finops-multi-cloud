@@ -1,0 +1,3 @@
+"""
+OpsYield Background Collector module
+"""
