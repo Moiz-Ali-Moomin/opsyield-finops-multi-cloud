@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from typing import Any, Optional, Dict
-import aioredis
+from redis.asyncio import Redis, from_url
 
 logger = logging.getLogger(__name__)
 
@@ -10,12 +10,12 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 CACHE_TTL = int(os.getenv("CACHE_TTL", "3600")) # Default 1 hour TTL
 
 class RedisCache:
-    _pool: Optional[aioredis.Redis] = None
+    _pool: Optional[Redis] = None
 
     @classmethod
-    async def get_client(cls) -> aioredis.Redis:
+    async def get_client(cls) -> Redis:
         if cls._pool is None:
-            cls._pool = aioredis.from_url(REDIS_URL, decode_responses=True)
+            cls._pool = from_url(REDIS_URL, decode_responses=True)
             logger.info(f"Initialized Redis connection to {REDIS_URL}")
         return cls._pool
 

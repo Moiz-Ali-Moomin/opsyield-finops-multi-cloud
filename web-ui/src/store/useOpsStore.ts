@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import axios from 'axios';
 import { api, AnalysisResult, CloudStatus } from '../api/client';
 
+export type DateMode = '30d' | '60d' | '90d' | 'custom';
+
 interface OpsState {
     provider: string;
     projectId: string | undefined;
@@ -13,8 +15,17 @@ interface OpsState {
     isAggregate: boolean;
     executiveMode: boolean;
 
+    // Date range
+    days: number;
+    dateMode: DateMode;
+    customStart: string | null;
+    customEnd: string | null;
+    setDateMode: (mode: DateMode) => void;
+    setCustomDateRange: (start: string, end: string) => void;
+
     selectedProjectId: string | null;
     setSelectedProject: (id: string) => void;
+    setSubscriptionId: (subscriptionId: string) => void;
     setProvider: (provider: string) => void;
     setAggregateMode: (enabled: boolean) => void;
     setExecutiveMode: (enabled: boolean) => void;
@@ -33,6 +44,29 @@ export const useOpsStore = create<OpsState>((set, get) => ({
     error: null,
     isAggregate: false,
     executiveMode: false,
+
+    days: 30,
+    dateMode: '30d',
+    customStart: null,
+    customEnd: null,
+
+    setDateMode: (mode: DateMode) => {
+        const daysMap: Record<Exclude<DateMode, 'custom'>, number> = { '30d': 30, '60d': 60, '90d': 90 };
+        if (mode !== 'custom') {
+            set({ dateMode: mode, days: daysMap[mode], customStart: null, customEnd: null });
+            get().fetchData();
+        } else {
+            set({ dateMode: 'custom' });
+        }
+    },
+
+    setCustomDateRange: (start: string, end: string) => {
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        const diffDays = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+        set({ customStart: start, customEnd: end, days: diffDays, dateMode: 'custom' });
+        get().fetchData();
+    },
 
     setProvider: (provider: string) => {
         set({ provider, isAggregate: false });
@@ -88,16 +122,16 @@ export const useOpsStore = create<OpsState>((set, get) => ({
     fetchData: async () => {
         set({ loading: true, error: null });
 
-        const { provider, subscriptionId, isAggregate } = get();
+        const { provider, subscriptionId, isAggregate, days } = get();
 
         try {
             let url = '';
 
             if (isAggregate) {
-                url = `/aggregate?providers=gcp,aws,azure&days=30`;
+                url = `/aggregate?providers=gcp,aws,azure&days=${days}`;
                 if (subscriptionId) url += `&subscription_id=${subscriptionId}`;
             } else {
-                url = `/analyze?provider=${provider}&days=30`;
+                url = `/analyze?provider=${provider}&days=${days}`;
 
                 if (provider === 'gcp' && get().selectedProjectId) {
                     url += `&project_id=${get().selectedProjectId}`;
@@ -112,14 +146,14 @@ export const useOpsStore = create<OpsState>((set, get) => ({
 
             let normalizedData = response.data;
 
-            // 🔥 Normalize aggregate response to match AnalysisResult shape
+            // Normalize aggregate response to match AnalysisResult shape
             if (isAggregate) {
                 normalizedData = {
                     ...response.data,
                     meta: {
                         generated_at: response.data.meta.generated_at,
                         provider: "aggregate",
-                        period: "30 days",
+                        period: `${days} days`,
                     }
                 };
             }

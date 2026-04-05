@@ -46,7 +46,7 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db_sess
         "email": user_data.email,
         "password_hash": hashed_password,
         "organization_id": user_data.organization_id,
-        "role": "admin" # First user typically admin, could make configurable
+        "role": "user"
     }
     
     new_user = await user_repo.create(user_obj)

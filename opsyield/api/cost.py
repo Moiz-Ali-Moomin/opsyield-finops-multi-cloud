@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 
 from ..storage.database import get_db_session
@@ -39,7 +39,7 @@ async def get_cost_summary(
 @router.get("/history")
 async def get_cost_history(
     days: int = 30,
-    provider: str = None,
+    provider: Optional[str] = None,
     org_id: str = Depends(get_current_organization),
     db: AsyncSession = Depends(get_db_session)
 ):

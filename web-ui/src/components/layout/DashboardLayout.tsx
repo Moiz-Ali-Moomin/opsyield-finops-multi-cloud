@@ -4,6 +4,7 @@ import { useOpsStore } from '@/store/useOpsStore';
 import { Button } from '@/components/ui/button';
 import { Activity, RefreshCw } from 'lucide-react';
 import { CloudStatusBar } from './CloudStatusBar';
+import { DateRangePicker } from './DateRangePicker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
@@ -99,6 +100,8 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                                 </Button>
                             </Link>
                         </nav>
+
+                        <DateRangePicker />
 
                         <Button variant="outline" size="icon" onClick={() => fetchData()} disabled={loading}>
                             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />

@@ -18,7 +18,7 @@ export function ForecastChart() {
                     <XAxis dataKey="month" className="text-xs" />
                     <YAxis className="text-xs" tickFormatter={(val) => `$${val}`} />
                     <Tooltip
-                        formatter={(val: number | undefined) => val !== undefined ? formatCurrency(val) : ''}
+                        formatter={(val) => typeof val === 'number' ? formatCurrency(val) : ''}
                         contentStyle={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)' }}
                     />
                     <Legend />

@@ -140,10 +140,6 @@ class AWSProvider:
     async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
         if not HAS_BOTO3:
             return []
-        import asyncio
-        return await asyncio.to_thread(self._sync_get_costs, days)
-
-    async def get_costs(self, days: int = 30) -> List[NormalizedCost]:
         from ..billing.aws import AWSBillingProvider
         billing = AWSBillingProvider(region=self.region)
         return await billing.get_costs(days)

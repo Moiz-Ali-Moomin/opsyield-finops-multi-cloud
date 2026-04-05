@@ -41,7 +41,7 @@ class BaseRepository:
     async def delete(self, id: str) -> bool:
         db_obj = await self.get_by_id(id)
         if db_obj:
-            await self.session.delete(db_obj)
+            self.session.delete(db_obj)
             await self.session.flush()
             return True
         return False

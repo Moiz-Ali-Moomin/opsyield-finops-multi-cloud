@@ -21,7 +21,7 @@ export function SpendTrendChart() {
                     <XAxis dataKey="date" className="text-xs" />
                     <YAxis className="text-xs" tickFormatter={(val) => `$${val}`} />
                     <Tooltip
-                        formatter={(val: number | undefined) => val !== undefined ? formatCurrency(val) : ''}
+                        formatter={(val) => typeof val === 'number' ? formatCurrency(val) : ''}
                         contentStyle={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)' }}
                     />
                     <Area
